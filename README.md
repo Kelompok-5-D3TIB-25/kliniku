@@ -1,2 +1,1 @@
-# kliniku
-# kliniku
+# KliniKu
