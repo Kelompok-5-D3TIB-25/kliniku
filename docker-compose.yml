@@ -1,16 +1,16 @@
 services:
   app:
-    image: shinsenter/laravel:php8.3-nginx
+    image: shinsenter/laravel:php8.4-nginx
     container_name: kliniku
-    restart: no
+    restart: "no"
     ports:
-      - "8000:80"
+      - "8080:80"
     volumes:
       - ./src:/var/www/html
     environment:
       TZ: Asia/Jakarta
-      APP_URL: http://localhost:8000
-      ASSET_URL: http://localhost:8000
+      APP_URL: http://localhost:8080
+      ASSET_URL: http://localhost:8080
       APP_TIMEZONE: Asia/Jakarta
       LARAVEL_AUTO_MIGRATION: 0
       DB_CONNECTION: mysql
@@ -28,7 +28,7 @@ services:
   db:
     image: mysql:8.4.11
     container_name: kliniku-db
-    restart: no
+    restart: "no"
     volumes:
       - db-data:/var/lib/mysql
     environment:

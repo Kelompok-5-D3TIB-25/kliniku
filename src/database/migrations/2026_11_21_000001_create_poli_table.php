@@ -1,0 +1,28 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('poli', function (Blueprint $table) {
+            $table->unsignedTinyInteger('poli_id')->autoIncrement();
+            $table->string('poli_nama', 100)->unique('uq_poli_nama');
+            $table->string('poli_keterangan', 255)->nullable();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('poli');
+    }
+};
