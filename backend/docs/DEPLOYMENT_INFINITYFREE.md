@@ -4,102 +4,112 @@ Panduan teknis dan operasional untuk melakukan deployment sistem backend **KLINI
 
 ---
 
-## 1. Arsitektur Struktur Folder di Server Hosting
+## ⚠️ Aturan Krusial InfinityFree Free Hosting
 
-InfinityFree menyediakan akses FTP dengan direktori root `/`. Folder publik yang dapat diakses oleh browser dari seluruh dunia adalah `/htdocs`.
+> [!CAUTION]
+> **InfinityFree secara otomatis MENGHAPUS berkas yang berada di luar folder `/htdocs`.**  
+> Sistem pembersih otomatis (*automated cleanup cron*) dan proteksi PHP `open_basedir` di InfinityFree melarang berkas website berada di luar `/htdocs`. Oleh karena itu, seluruh berkas proyek harus diletakkan **di dalam folder `/htdocs`**, dengan pengamanan ketat melalui [.htaccess](file:///root/Melissa/kliniku/frontend/.htaccess).
 
-Untuk menjaga keamanan kode sumber, file konfigurasi `.env`, dan database dump agar **tidak bocor ke publik**, struktur diatur dengan memisahkan folder privat dan folder publik:
+---
+
+## 1. Struktur Berkas di Dalam `/htdocs`
+
+Semua berkas di-upload ke dalam folder **`/htdocs`**:
 
 ```text
-/ (FTP Root InfinityFree)
+/htdocs/ (Web Root Publik InfinityFree)
 │
-├── backend/                       <-- FOLDER PRIVAT (Di luar htdocs, TIDAK BISA diakses publik)
-│   ├── app/
-│   ├── bootstrap/
-│   ├── config/
-│   ├── database/
-│   │   └── kliniku_dump.sql       <-- File backup database untuk diimpor
-│   ├── routes/
-│   ├── storage/                   <-- Wajib CHMOD 775/777
-│   ├── vendor/                    <-- Dependensi Composer produksi
-│   └── .env                       <-- Konfigurasi database & kredensial API
+├── .htaccess                  <-- Proteksi keamanan folder & pembagi rute API vs Frontend
+├── index.php                  <-- Entry point Laravel API
+├── index.html                 <-- Halaman GUI Penguji API (atau hasil build Vue nantinya)
 │
-└── htdocs/                        <-- FOLDER PUBLIK WEB ROOT (Bisa diakses publik)
-    ├── .htaccess                  <-- Mengatur routing /api/ ke index.php dan / ke index.html
-    ├── index.php                  <-- Jembatan publik yang memanggil ../backend/
-    └── index.html                 <-- Halaman GUI Pengujian API (atau hasil build Vue nantinya)
+├── app/                       <-- Controller, Model, Middleware, Service (~128 KB)
+├── bootstrap/                 <-- Inisialisasi app (~48 KB)
+├── config/                    <-- Konfigurasi database & service (~72 KB)
+├── database/                  <-- Migrations (~50 KB)
+├── routes/                    <-- Definisi rute API (~16 KB)
+├── storage/                   <-- Folder writable (Wajib CHMOD 775/777)
+├── vendor/                    <-- Dependensi Composer produksi (hasil: composer install --no-dev)
+└── .env                       <-- Konfigurasi kredensial MySQL & API Keys (Terproteksi 403)
 ```
 
 ---
 
-## 2. Checklist Persiapan di Komputer Lokal
+## 2. Rincian Folder: Apa yang WAJIB dan JANGAN Di-upload?
 
-Sebelum meng-upload ke hosting, siapkan berkas di komputer lokal:
+Folder proyek lokal tampak sangat besar terutama karena folder **`node_modules` (96 MB)** dan dependensi dev di **`vendor` (48 MB)**. Berikut panduan seleksinya:
 
-### A. Database Dump SQL
-File dump database MySQL yang sudah berisi seluruh tabel, relasi, dan 110 akun pengguna seeder awal telah siap di:
-```text
-backend/database/kliniku_dump.sql
-```
+### ❌ JANGAN PERNAH DI-UPLOAD (Hemat ~120 MB & Ribuan File):
+| Folder / Berkas | Ukuran | Alasan Tidak Perlu Di-upload |
+| :--- | :--- | :--- |
+| **`node_modules/`** | **~96 MB** | **100% TIDAK DIGUNAKAN oleh PHP runtime**. Ini hanya dependensi JavaScript lokal untuk kompilasi Vite/Tailwind. |
+| **`.git/`** | **~20+ MB** | Riwayat Git lokal, tidak diperlukan di server produksi. |
+| **`tests/`** | ~44 KB | Pengujian unit/feature PHPUnit hanya untuk pengembangan lokal. |
+| **`docs/`** | ~52 KB | Dokumentasi teknis hanya untuk pengembang. |
+| **`docker-compose.yml`**| ~4 KB | InfinityFree adalah shared hosting, bukan container Docker. |
+| **`database/kliniku_dump.sql`** | ~56 KB | File ini **di-import lewat browser ke phpMyAdmin**, jangan ditaruh di web server. |
+| **`storage/logs/*.log`**| - | File log lokal (cukup upload folder `storage/logs/` kosong). |
+| `package.json`, `package-lock.json`, `vite.config.js` | - | Konfigurasi node tools lokal. |
 
-### B. Siapkan Folder `vendor` untuk Produksi
-Jalankan perintah ini di dalam folder `backend/` komputer Anda:
+---
+
+###  WAJIB DI-UPLOAD (Total hanya ~20–25 MB):
+| Folder / Berkas | Fungsi |
+| :--- | :--- |
+| **`app/`** | Seluruh logika backend (Controller, Models, Services, Middleware). |
+| **`bootstrap/`** | File inisialisasi aplikasi (`app.php`, `providers.php`, folder `cache/`). |
+| **`config/`** | Seluruh konfigurasi Laravel. |
+| **`database/`** | Folder migrasi database. |
+| **`routes/`** | Rute API (`routes/api.php`, `routes/console.php`). |
+| **`storage/`** | Folder penyimpanan sesi, cache, dan log (kosongkan isinya, set permission `775`). |
+| **`vendor/`** | Framework Laravel dan library JWT (**wajib dirampingkan dengan `--no-dev`**). |
+| **`.env`** | Kredensial MySQL InfinityFree dan kunci API. |
+| **`index.php`** | Diambil dari `frontend/index.php`. |
+| **`.htaccess`** | Diambil dari `frontend/.htaccess`. |
+| **`index.html`** | Diambil dari `frontend/index.html` (Test Client sementara). |
+
+---
+
+## 3. Langkah Demi Langkah Deployment
+
+### Langkah 1: Rampingkan Folder `vendor/` di Komputer Lokal
+Di terminal komputer lokal Anda:
 ```bash
 cd backend
 composer install --optimize-autoloader --no-dev
 ```
-*(Ini akan membersihkan paket pengujian dev dan mengoptimalkan autoloader class PHP).*
+*Perintah ini membuang paket PHPUnit, Mockery, Faker, dll, serta menyusutkan ukuran folder `vendor/` secara drastis.*
 
 ---
 
-## 3. Langkah Demi Langkah Setup di InfinityFree
-
-### Langkah 1: Buat Database MySQL di VistaPanel
-1. Login ke akun [InfinityFree](https://app.infinityfree.com) dan buka **Control Panel (VistaPanel)**.
-2. Cari dan klik menu **"MySQL Databases"**.
-3. Buat database baru dengan nama, misal: `kliniku` (InfinityFree akan menambahkan prefix akun otomatis, misal: `epiz_12345678_kliniku`).
-4. Catat detail kredensial yang muncul di halaman tersebut:
-   * **MySQL Hostname**: contoh `sql200.infinityfree.com`
-   * **MySQL Database Name**: contoh `epiz_12345678_kliniku`
-   * **MySQL Username**: contoh `epiz_12345678`
-   * **MySQL Password**: kata sandi akun hosting Anda
-   * **MySQL Port**: `3306`
-
-### Langkah 2: Impor Database via phpMyAdmin
-1. Kembali ke Control Panel, klik menu **phpMyAdmin**.
-2. Klik tombol **Connect** pada database yang baru dibuat.
-3. Di phpMyAdmin, pilih database Anda di sidebar kiri.
-4. Klik tab **Import** pada menu atas.
-5. Klik **Choose File** -> pilih file `backend/database/kliniku_dump.sql` dari komputer Anda.
-6. Gulir ke bawah dan klik tombol **Import / Go**.
-7. Pastikan seluruh tabel (`user`, `pasien`, `dokter`, `staf`, `poli`, `jadwal`, `cache`, `migrations`) berhasil terbuat.
+### Langkah 2: Setup Database di phpMyAdmin
+1. Buka **Control Panel InfinityFree** $\rightarrow$ klik **MySQL Databases** $\rightarrow$ buat database baru.
+2. Catat Hostname (`sqlXXX.infinityfree.com`), Database Name, Username, dan Password.
+3. Buka **phpMyAdmin** dari panel $\rightarrow$ pilih database Anda $\rightarrow$ klik tab **Import** $\rightarrow$ upload file [backend/database/kliniku_dump.sql](file:///root/Melissa/kliniku/backend/database/kliniku_dump.sql) $\rightarrow$ klik **Go/Import**.
 
 ---
 
-### Langkah 3: Upload Berkas melalui FTP (FileZilla)
-Gunakan aplikasi FTP seperti **FileZilla** untuk mengunggah berkas:
-* **Host**: `ftpupload.net` (atau sesuai detail di dashboard InfinityFree)
-* **Username**: `epiz_12345678`
-* **Password**: Kata sandi hosting Anda
-* **Port**: `21`
-
-#### A. Upload Folder `backend/`:
-1. Pada sisi server (Remote Site), pastikan Anda berada di direktori root `/`.
-2. Buat folder baru bernama `backend` sejajar dengan folder `htdocs`.
-3. Upload seluruh isi folder `backend/` dari komputer Anda ke dalam `/backend/` di server.
-
-#### B. Upload Folder `frontend/` ke `/htdocs/`:
-1. Di sisi server, masuk ke dalam folder `/htdocs/`.
-2. Hapus file bawaan default jika ada (seperti `default.html`).
-3. Upload seluruh isi folder `frontend/` lokal Anda ke dalam `/htdocs/`:
-   * `frontend/.htaccess` $\rightarrow$ upload ke `/htdocs/.htaccess`
-   * `frontend/index.php` $\rightarrow$ upload ke `/htdocs/index.php`
-   * `frontend/index.html` $\rightarrow$ upload ke `/htdocs/index.html`
+### Langkah 3: Upload Berkas ke `/htdocs` via FTP (FileZilla)
+1. Buka FileZilla dan hubungkan ke akun InfinityFree Anda.
+2. Masuk ke direktori **`/htdocs`** di server. Hapus file bawaan jika ada.
+3. Upload berkas berikut dari folder `frontend/` ke dalam `/htdocs/`:
+   - `frontend/.htaccess`
+   - `frontend/index.php`
+   - `frontend/index.html`
+4. Upload folder dan berkas berikut dari folder `backend/` ke dalam `/htdocs/`:
+   - `app/`
+   - `bootstrap/`
+   - `config/`
+   - `database/` (tanpa `kliniku_dump.sql`)
+   - `routes/`
+   - `storage/`
+   - `vendor/` (hasil `composer install --no-dev`)
+   - `.env`
 
 ---
 
 ### Langkah 4: Konfigurasi File `.env` di Server
-Buka file `/backend/.env` di server (via FileZilla -> View/Edit atau File Manager) dan sesuaikan:
+Edit file `.env` di dalam `/htdocs/.env` agar mengarah ke database InfinityFree:
 
 ```dotenv
 APP_NAME=KLINIKU
@@ -112,10 +122,10 @@ LOG_CHANNEL=stack
 LOG_LEVEL=error
 
 DB_CONNECTION=mysql
-DB_HOST=sql200.infinityfree.com
+DB_HOST=sqlXXX.infinityfree.com
 DB_PORT=3306
-DB_DATABASE=epiz_12345678_kliniku
-DB_USERNAME=epiz_12345678
+DB_DATABASE=epiz_xxxxxxx_kliniku
+DB_USERNAME=epiz_xxxxxxx
 DB_PASSWORD=password_database_anda
 
 JWT_SECRET=3b92f7c0a8e14d6f852b7194c3e0aa1b9542df7182c40e53a79d86b1f2e34589
@@ -135,43 +145,22 @@ FLOWKIRIM_TTL=300
 
 ### Langkah 5: Set Permissions Folder `storage/` dan `bootstrap/cache/`
 Di FileZilla:
-1. Klik kanan folder `/backend/storage` -> pilih **File permissions...**.
-2. Masukkan Numeric value: **775** (atau **777** jika 775 terkendala akses) dan centang **Recurse into subdirectories**.
-3. Lakukan hal yang sama untuk folder `/backend/bootstrap/cache`.
+1. Klik kanan folder `/htdocs/storage` $\rightarrow$ **File permissions...** $\rightarrow$ set ke **775** (atau **777**) dan centang **Recurse into subdirectories**.
+2. Lakukan hal yang sama untuk folder `/htdocs/bootstrap/cache`.
 
 ---
 
 ## 4. Pengujian Live Melalui Browser
 
-Buka domain Anda di web browser:
+Buka URL website Anda di browser:
 ```text
-http://namadomainanda.infinityfreeapp.com/
+http://namadomainanda.infinityfreeapp.com
 ```
 
-### Mengapa Halaman GUI Test Client Berfungsi Bebas Anti-Bot?
-1. Saat Anda membuka halaman di atas melalui browser asli, InfinityFree otomatis menjalankan script pengecekan browser (`aes.js`) dan menerbitkan cookie `__test`.
-2. Halaman [index.html](file:///root/Melissa/kliniku/frontend/index.html) dimuat dengan UI responsif.
-3. Seluruh panggilan API dari tombol di halaman tersebut berjalan ke path yang sama (`/api/v1/...`), sehingga cookie `__test` **otomatis terkirim** dan request ke Laravel **tidak diblokir**!
-
-### Fitur yang Dapat Diuji Langsung dari Halaman:
-1. **Cek Koneksi Server**: Menguji koneksi database dengan mengambil data master poliklinik (`GET /api/v1/polis`).
-2. **Validasi & Ekstraksi NIK**: Mengetikkan 16 digit NIK untuk melihat decode jenis kelamin, tanggal lahir, dan ketersediaan NIK di database.
-3. **Pendaftaran Pasien**: Mengisi formulir pasien baru dan mencetak nomor Rekam Medis (`RM-YYYY-XXXX`).
-4. **Login & WhatsApp Tap**:
-   - Memverifikasi NIK + Kata Sandi + centang Google reCAPTCHA v2.
-   - Mengembalikan link **"Buka WhatsApp (Tap to Verify)"**.
-   - Tombol **"Cek Status Verifikasi"** yang mem-poll status ke server hingga terbit JWT Bearer token.
-5. **Akses Profil Pasien (/me)**: Menampilkan kartu rekam medis pasien terotentikasi.
-6. **Logout**: Menghapus sesi JWT.
-7. **JSON Inspector**: Memperlihatkan secara live HTTP status code dan payload JSON yang dikembalikan oleh backend.
-
----
-
-## 5. Transisi Saat Frontend Vue Selesai Dibuat
-
-Ketika aplikasi frontend Vue Anda sudah selesai dikembangkan di komputer lokal:
-1. Jalankan `npm run build` di folder proyek Vue.
-2. Hasil build akan berada di folder `dist/` (berupa `index.html` dan folder `assets/`).
-3. Upload seluruh isi folder `dist/` ke dalam `/htdocs/` di InfinityFree (menggantikan `index.html` penguji API sementara).
-4. Pastikan file `.htaccess` dan `index.php` tetap berada di `/htdocs/`.
-5. Aplikasi Vue Anda langsung aktif dan terhubung sempurna ke API backend Laravel!
+Halaman GUI penguji [index.html](file:///root/Melissa/kliniku/frontend/index.html) akan muncul. Anda dapat menguji:
+1. **Cek Koneksi Database & Server** (`GET /api/v1/polis`)
+2. **Validasi & Ekstraksi NIK** (`POST /api/v1/check-nik`)
+3. **Pendaftaran Pasien Baru** (`POST /api/v1/register`)
+4. **Login Pasien & FlowKirim WhatsApp Tap** (`POST /api/v1/login` & `POST /api/v1/verify-otp`)
+5. **Akses Profil Pasien / Rekam Medis** (`GET /api/v1/me` via JWT Bearer Token)
+6. **Logout** (`POST /api/v1/logout`)
