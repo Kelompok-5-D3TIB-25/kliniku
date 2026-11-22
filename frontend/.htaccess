@@ -1,0 +1,33 @@
+# ==============================================================================
+# KLINIKU — Apache .htaccess for InfinityFree / Shared Hosting (/htdocs)
+# ==============================================================================
+
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+    RewriteBase /
+
+    # 1. Forward Authorization Header (Krusial untuk Bearer JWT Token pada Apache/FastCGI)
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # 2. RUTE API: Semua request yang diawali dengan /api diarahkan ke Laravel index.php
+    RewriteRule ^api(/.*)?$ index.php [L,QSA]
+
+    # 3. FILE/ASSET FISIK: Jika file atau direktori fisik ada (misal: index.html, gambar, css, js), layani langsung
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # 4. RUTE FRONTEND (SPA / TEST PAGE): Seluruh rute halaman lainnya diarahkan ke index.html
+    RewriteRule ^ index.html [L]
+</IfModule>
+
+# Keamanan Tambahan: Blokir akses langsung ke file sensitif jika tidak sengaja ter-upload ke /htdocs
+<FilesMatch "^\.(env|git|lock|sql)">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
