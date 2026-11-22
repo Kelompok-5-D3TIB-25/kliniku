@@ -27,10 +27,11 @@ Semua berkas di-upload ke dalam folder **`/htdocs`**:
 ├── bootstrap/                 <-- Inisialisasi app (~48 KB)
 ├── config/                    <-- Konfigurasi database & service (~72 KB)
 ├── database/                  <-- Migrations (~50 KB)
+├── resources/                 <-- Template Blade Email OTP (resources/views/emails/otp.blade.php)
 ├── routes/                    <-- Definisi rute API (~16 KB)
 ├── storage/                   <-- Folder writable (Wajib CHMOD 775/777)
 ├── vendor/                    <-- Dependensi Composer produksi (hasil: composer install --no-dev)
-└── .env                       <-- Konfigurasi kredensial MySQL & API Keys (Terproteksi 403)
+└── .env                       <-- Konfigurasi kredensial MySQL & SMTP Email (Terproteksi 403)
 ```
 
 ---
@@ -56,14 +57,15 @@ Folder proyek lokal tampak sangat besar terutama karena folder **`node_modules` 
 ###  WAJIB DI-UPLOAD (Total hanya ~20–25 MB):
 | Folder / Berkas | Fungsi |
 | :--- | :--- |
-| **`app/`** | Seluruh logika backend (Controller, Models, Services, Middleware). |
+| **`app/`** | Seluruh logika backend (Controller, Models, Mailables, Middleware). |
 | **`bootstrap/`** | File inisialisasi aplikasi (`app.php`, `providers.php`, folder `cache/`). |
-| **`config/`** | Seluruh konfigurasi Laravel. |
+| **`config/`** | Seluruh konfigurasi Laravel (`app.php`, `database.php`, `mail.php`, dll). |
 | **`database/`** | Folder migrasi database. |
+| **`resources/`** | Template Blade email OTP (`views/emails/otp.blade.php`). |
 | **`routes/`** | Rute API (`routes/api.php`, `routes/console.php`). |
 | **`storage/`** | Folder penyimpanan sesi, cache, dan log (kosongkan isinya, set permission `775`). |
 | **`vendor/`** | Framework Laravel dan library JWT (**wajib dirampingkan dengan `--no-dev`**). |
-| **`.env`** | Kredensial MySQL InfinityFree dan kunci API. |
+| **`.env`** | Kredensial MySQL InfinityFree dan konfigurasi SMTP Gmail. |
 | **`index.php`** | Diambil dari `frontend/index.php`. |
 | **`.htaccess`** | Diambil dari `frontend/.htaccess`. |
 | **`index.html`** | Diambil dari `frontend/index.html` (Test Client sementara). |
@@ -72,24 +74,24 @@ Folder proyek lokal tampak sangat besar terutama karena folder **`node_modules` 
 
 ## 3. Langkah Demi Langkah Deployment
 
-### Langkah 1: Rampingkan Folder `vendor/` di Komputer Lokal
-Di terminal komputer lokal Anda:
-```bash
-cd backend
-composer install --optimize-autoloader --no-dev
-```
-*Perintah ini membuang paket PHPUnit, Mockery, Faker, dll, serta menyusutkan ukuran folder `vendor/` secara drastis.*
+### Metode Cepat (Menggunakan `deploy.zip` & `unzip.php`):
+1. Import database `backend/database/kliniku_dump.sql` ke phpMyAdmin InfinityFree.
+2. Upload file `deploy.zip` dan `unzip.php` langsung ke dalam folder `/htdocs`.
+3. Buka browser: `http://namadomainanda.infinityfreeapp.com/unzip.php`.
+4. Script akan otomatis mengekstrak seluruh proyek dalam 2 detik.
+5. Hapus file `unzip.php` dan `deploy.zip` dari `/htdocs`.
+6. Sesuaikan konfigurasi database di file `.env`.
 
 ---
 
-### Langkah 2: Setup Database di phpMyAdmin
+### Langkah Manual (Jika Ingin Upload via FTP / FileZilla):
+
+#### Langkah 1: Setup Database di phpMyAdmin
 1. Buka **Control Panel InfinityFree** $\rightarrow$ klik **MySQL Databases** $\rightarrow$ buat database baru.
 2. Catat Hostname (`sqlXXX.infinityfree.com`), Database Name, Username, dan Password.
 3. Buka **phpMyAdmin** dari panel $\rightarrow$ pilih database Anda $\rightarrow$ klik tab **Import** $\rightarrow$ upload file [backend/database/kliniku_dump.sql](file:///root/Melissa/kliniku/backend/database/kliniku_dump.sql) $\rightarrow$ klik **Go/Import**.
 
----
-
-### Langkah 3: Upload Berkas ke `/htdocs` via FTP (FileZilla)
+#### Langkah 2: Upload Berkas ke `/htdocs` via FTP (FileZilla)
 1. Buka FileZilla dan hubungkan ke akun InfinityFree Anda.
 2. Masuk ke direktori **`/htdocs`** di server. Hapus file bawaan jika ada.
 3. Upload berkas berikut dari folder `frontend/` ke dalam `/htdocs/`:
@@ -101,15 +103,14 @@ composer install --optimize-autoloader --no-dev
    - `bootstrap/`
    - `config/`
    - `database/` (tanpa `kliniku_dump.sql`)
+   - `resources/`
    - `routes/`
    - `storage/`
    - `vendor/` (hasil `composer install --no-dev`)
    - `.env`
 
----
-
-### Langkah 4: Konfigurasi File `.env` di Server
-Edit file `.env` di dalam `/htdocs/.env` agar mengarah ke database InfinityFree:
+#### Langkah 3: Konfigurasi File `.env` di Server
+Edit file `.env` di dalam `/htdocs/.env` agar mengarah ke database InfinityFree dan SMTP Gmail:
 
 ```dotenv
 APP_NAME=KLINIKU
@@ -134,33 +135,17 @@ JWT_TTL=86400
 RECAPTCHA_SITE_KEY=6LfEiisuAAAAAM1dgo05Kv4IqPwYUF5NTWbDUN9V
 RECAPTCHA_SECRET_KEY=6LfEiisuAAAAAEPuGqfaxFfGOtUGHNdZq0djWVkd
 
-FLOWKIRIM_API_KEY=fk_live_25ebb5646a8d7afd3d9e526d394f81098a8e48b0ed355b0a
-FLOWKIRIM_BASE_URL=https://scan.flowkirim.com/api/v1/verify
-FLOWKIRIM_DEFAULT_CHANNEL=whatsapp_tap
-FLOWKIRIM_BRAND=KLINIKU
-FLOWKIRIM_TTL=300
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=lintarkertapati@student.uns.ac.id
+MAIL_PASSWORD=wbsuwpicpuccabsl
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS="lintarkertapati@student.uns.ac.id"
+MAIL_FROM_NAME="KLINIKU"
 ```
 
----
-
-### Langkah 5: Set Permissions Folder `storage/` dan `bootstrap/cache/`
+#### Langkah 4: Set Permissions Folder `storage/` dan `bootstrap/cache/`
 Di FileZilla:
 1. Klik kanan folder `/htdocs/storage` $\rightarrow$ **File permissions...** $\rightarrow$ set ke **775** (atau **777**) dan centang **Recurse into subdirectories**.
 2. Lakukan hal yang sama untuk folder `/htdocs/bootstrap/cache`.
-
----
-
-## 4. Pengujian Live Melalui Browser
-
-Buka URL website Anda di browser:
-```text
-http://namadomainanda.infinityfreeapp.com
-```
-
-Halaman GUI penguji [index.html](file:///root/Melissa/kliniku/frontend/index.html) akan muncul. Anda dapat menguji:
-1. **Cek Koneksi Database & Server** (`GET /api/v1/polis`)
-2. **Validasi & Ekstraksi NIK** (`POST /api/v1/check-nik`)
-3. **Pendaftaran Pasien Baru** (`POST /api/v1/register`)
-4. **Login Pasien & FlowKirim WhatsApp Tap** (`POST /api/v1/login` & `POST /api/v1/verify-otp`)
-5. **Akses Profil Pasien / Rekam Medis** (`GET /api/v1/me` via JWT Bearer Token)
-6. **Logout** (`POST /api/v1/logout`)

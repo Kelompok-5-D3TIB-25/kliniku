@@ -2,12 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Mail\OtpMail;
 use App\Models\User;
-use App\Services\FlowKirimService;
 use App\Services\JwtService;
 use App\Services\RecaptchaService;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class AuthLoginTest extends TestCase
@@ -84,8 +84,10 @@ class AuthLoginTest extends TestCase
         ]);
     }
 
-    public function test_successful_patient_login_initiates_flowkirim_whatsapp_tap_verification(): void
+    public function test_successful_patient_login_sends_email_otp(): void
     {
+        Mail::fake();
+
         $response = $this->postJson('/api/v1/login', [
             'nik' => '3372020912254658', // Yusuf Hidayat (Patient 1)
             'password' => 'Pasien123!',
@@ -96,25 +98,37 @@ class AuthLoginTest extends TestCase
         $response->assertJson([
             'success' => true,
             'step' => 'otp_verification',
+            'data' => [
+                'channel' => 'email',
+            ],
         ]);
 
-        $requestId = $response->json('data.request_id');
-        $this->assertNotEmpty($requestId);
-        $this->assertEquals('whatsapp_tap', $response->json('data.channel'));
-        $this->assertNotEmpty($response->json('data.wa_deeplink'));
+        $sessionId = $response->json('data.otp_session_id');
+        $this->assertNotEmpty($sessionId);
+
+        // Verify email was sent
+        Mail::assertSent(OtpMail::class, function ($mail) {
+            return $mail->hasTo('lintarkertapati@student.uns.ac.id') && strlen($mail->otpCode) === 6;
+        });
     }
 
-    public function test_verify_otp_status_verified_issues_jwt_and_profile(): void
+    public function test_verify_otp_with_correct_code_issues_jwt_and_profile(): void
     {
+        Mail::fake();
+
         $loginResponse = $this->postJson('/api/v1/login', [
             'nik' => '3372020912254658',
             'password' => 'Pasien123!',
             'recaptcha_token' => 'test-valid-token',
         ]);
-        $requestId = $loginResponse->json('data.request_id');
+        $sessionId = $loginResponse->json('data.otp_session_id');
+        $sessionData = Cache::get('email_otp_session_' . $sessionId);
+        $this->assertNotNull($sessionData);
+        $otpCode = $sessionData['otp_code'];
 
         $response = $this->postJson('/api/v1/verify-otp', [
-            'request_id' => $requestId,
+            'otp_session_id' => $sessionId,
+            'otp_code' => $otpCode,
         ]);
 
         $response->assertStatus(200);
@@ -127,6 +141,7 @@ class AuthLoginTest extends TestCase
                     'user_role' => 'pasien',
                     'user_nama' => 'Yusuf Hidayat',
                     'user_nik' => '3372020912254658',
+                    'user_email' => 'lintarkertapati@student.uns.ac.id',
                     'user_status' => 'aktif',
                     'profile' => [
                         'norm' => 'RM-2026-0001',
@@ -145,37 +160,33 @@ class AuthLoginTest extends TestCase
         $this->assertNotEmpty($token);
     }
 
-    public function test_verify_otp_status_pending_returns_202(): void
+    public function test_verify_otp_fails_with_wrong_code(): void
     {
-        $this->mock(FlowKirimService::class, function ($mock) {
-            $mock->shouldReceive('checkStatus')->with('mock-pending-req')->once()->andReturn([
-                'success' => true,
-                'status' => 'pending',
-            ]);
-        });
-
-        Cache::put('flowkirim_session_mock-pending-req', [
+        Cache::put('email_otp_session_test-wrong', [
             'user_id' => 'USR-PAS-0001',
             'user_nik' => '3372020912254658',
-            'phone' => '085113736221',
+            'email' => 'lintarkertapati@student.uns.ac.id',
+            'otp_code' => '123456',
             'expires_at' => now()->addMinutes(5)->timestamp,
         ], 300);
 
         $response = $this->postJson('/api/v1/verify-otp', [
-            'request_id' => 'mock-pending-req',
+            'otp_session_id' => 'test-wrong',
+            'otp_code' => '999999',
         ]);
 
-        $response->assertStatus(202);
+        $response->assertStatus(422);
         $response->assertJson([
             'success' => false,
-            'status' => 'pending',
+            'status' => 'invalid_code',
         ]);
     }
 
-    public function test_verify_otp_expired_or_invalid_request_id_returns_410(): void
+    public function test_verify_otp_expired_or_invalid_session_returns_410(): void
     {
         $response = $this->postJson('/api/v1/verify-otp', [
-            'request_id' => 'non-existent-or-expired-request',
+            'otp_session_id' => 'non-existent-or-expired-session',
+            'otp_code' => '123456',
         ]);
 
         $response->assertStatus(410);
@@ -185,26 +196,31 @@ class AuthLoginTest extends TestCase
         ]);
     }
 
-    public function test_resend_otp_creates_new_session(): void
+    public function test_resend_otp_creates_new_session_and_sends_email(): void
     {
-        Cache::put('flowkirim_session_old-request-id', [
+        Mail::fake();
+
+        Cache::put('email_otp_session_old-session', [
             'user_id' => 'USR-PAS-0001',
             'user_nik' => '3372020912254658',
-            'phone' => '085113736221',
+            'email' => 'lintarkertapati@student.uns.ac.id',
+            'otp_code' => '111111',
             'expires_at' => now()->addMinutes(5)->timestamp,
         ], 300);
 
         $response = $this->postJson('/api/v1/resend-otp', [
-            'request_id' => 'old-request-id',
+            'otp_session_id' => 'old-session',
         ]);
 
         $response->assertStatus(200);
         $response->assertJson([
             'success' => true,
         ]);
-        $newRequestId = $response->json('data.request_id');
-        $this->assertNotEmpty($newRequestId);
-        $this->assertNotEquals('old-request-id', $newRequestId);
+        $newSessionId = $response->json('data.otp_session_id');
+        $this->assertNotEmpty($newSessionId);
+        $this->assertNotEquals('old-session', $newSessionId);
+
+        Mail::assertSent(OtpMail::class);
     }
 
     public function test_authenticated_me_endpoint_returns_user_profile(): void
@@ -222,6 +238,7 @@ class AuthLoginTest extends TestCase
             'data' => [
                 'user_id' => 'USR-PAS-0001',
                 'user_nama' => 'Yusuf Hidayat',
+                'user_email' => 'lintarkertapati@student.uns.ac.id',
                 'profile' => [
                     'norm' => 'RM-2026-0001',
                 ],

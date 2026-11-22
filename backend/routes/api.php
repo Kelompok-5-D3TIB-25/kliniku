@@ -17,7 +17,7 @@ Route::prefix('v1')->group(function () {
     Route::match(['get', 'post'], '/check-nik', [RegisterController::class, 'checkNik']);
     Route::get('/polis', [RegisterController::class, 'getPoliList']);
 
-    // Login & FlowKirim WhatsApp Verification Endpoints
+    // Login & Email OTP Verification Endpoints
     Route::post('/login', [LoginController::class, 'login']);
     Route::post('/auth/login', [LoginController::class, 'login']);
     Route::match(['get', 'post'], '/verify-otp', [LoginController::class, 'verifyOtp']);

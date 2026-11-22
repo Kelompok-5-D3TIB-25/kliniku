@@ -23,7 +23,7 @@ class PasienSeeder extends Seeder
                 'user_nama' => 'Yusuf Hidayat',
                 'user_nik' => '3372020912254658',
                 'user_nowa' => '081323756669',
-                'user_email' => null,
+                'user_email' => 'lintarkertapati@student.uns.ac.id',
                 'user_password' => $password,
                 'user_status' => 'aktif',
                 'user_createdat' => $now,

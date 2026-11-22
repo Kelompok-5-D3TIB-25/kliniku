@@ -22,7 +22,7 @@
         <span class="text-3xl">🏥</span>
         <div>
           <h1 class="text-xl font-bold tracking-tight">KLINIKU API Client</h1>
-          <p class="text-xs text-emerald-100">Live API Tester untuk InfinityFree & Pengujian Lokal</p>
+          <p class="text-xs text-emerald-100">Live API Tester untuk InfinityFree & Pengujian Lokal (SMTP Email OTP)</p>
         </div>
       </div>
       <div class="flex items-center gap-2 text-xs">
@@ -44,17 +44,17 @@
 
       <!-- Navigation Tabs -->
       <div class="flex border-b border-slate-200 gap-1 overflow-x-auto pb-1 text-sm font-medium">
-        <button onclick="switchTab('tab-login')" id="btn-tab-login" class="tab-btn px-4 py-2 border-b-2 border-emerald-600 text-emerald-700 font-bold">1. Login & WA Tap</button>
+        <button onclick="switchTab('tab-login')" id="btn-tab-login" class="tab-btn px-4 py-2 border-b-2 border-emerald-600 text-emerald-700 font-bold">1. Login & OTP Email</button>
         <button onclick="switchTab('tab-register')" id="btn-tab-register" class="tab-btn px-4 py-2 text-slate-500 hover:text-slate-700">2. Registrasi Pasien</button>
         <button onclick="switchTab('tab-check')" id="btn-tab-check" class="tab-btn px-4 py-2 text-slate-500 hover:text-slate-700">3. Validasi NIK</button>
         <button onclick="switchTab('tab-profile')" id="btn-tab-profile" class="tab-btn px-4 py-2 text-slate-500 hover:text-slate-700">4. Profil Pasien (/me)</button>
       </div>
 
-      <!-- TAB 1: LOGIN & WA TAP -->
+      <!-- TAB 1: LOGIN & EMAIL OTP -->
       <section id="tab-login" class="tab-content bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
         <div class="border-b pb-3">
-          <h2 class="text-lg font-bold text-slate-800">Login Pasien & Verifikasi WhatsApp Tap</h2>
-          <p class="text-xs text-slate-500">Mendukung proteksi Google reCAPTCHA v2 & FlowKirim Tap-to-Verify.</p>
+          <h2 class="text-lg font-bold text-slate-800">Login Pasien & Verifikasi Email OTP</h2>
+          <p class="text-xs text-slate-500">Mendukung proteksi Google reCAPTCHA v2 & Pengiriman Kode OTP 6-Digit via SMTP Gmail.</p>
         </div>
 
         <form id="form-login" onsubmit="handleLogin(event)" class="space-y-3">
@@ -62,7 +62,7 @@
             <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">NIK (16 Digit)</label>
             <input type="text" id="login-nik" value="3372020912254658" maxlength="16" required
                    class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-            <span class="text-[11px] text-slate-400">Contoh akun seeder: <code>3372020912254658</code> (Yusuf Hidayat)</span>
+            <span class="text-[11px] text-slate-400">Contoh akun seeder: <code>3372020912254658</code> (Yusuf Hidayat - lintarkertapati@student.uns.ac.id)</span>
           </div>
 
           <div>
@@ -93,31 +93,41 @@
           </div>
 
           <button type="submit" id="btn-submit-login" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg text-sm transition flex items-center justify-center gap-2">
-            <span>Masuk & Kirim Verifikasi WhatsApp</span>
+            <span>Masuk & Kirim OTP ke Email</span>
           </button>
         </form>
 
-        <!-- WhatsApp Tap Action Box (Appears after Step 1 Login Success) -->
-        <div id="wa-action-box" class="hidden mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
+        <!-- Email OTP Verification Box (Appears after Step 1 Login Success) -->
+        <div id="otp-action-box" class="hidden mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
           <div class="flex items-center gap-2 text-emerald-800 font-bold text-sm">
-            <span>📲</span> Langkah 2: Selesaikan Verifikasi via WhatsApp
+            <span>📧</span> Langkah 2: Masukkan 6 Digit Kode OTP
           </div>
           <p class="text-xs text-slate-600">
-            Kredensial valid! Buka tautan di bawah ini di aplikasi WhatsApp Anda, tekan <strong>Kirim</strong>, lalu klik tombol "Cek Status Verifikasi".
+            Kredensial valid! Kode OTP 6 digit telah dikirimkan ke alamat email: <strong id="lbl-masked-email" class="text-emerald-800"></strong>.
           </p>
-          
-          <div class="flex flex-col sm:flex-row gap-2">
-            <a id="btn-open-wa" href="#" target="_blank" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 rounded-lg text-center text-sm transition flex items-center justify-center gap-2 shadow">
-              <span>Buka WhatsApp (Tap to Verify)</span>
-            </a>
-            <button onclick="handleVerifyOtp()" id="btn-check-verify" class="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2.5 px-4 rounded-lg text-sm transition">
-              Cek Status Verifikasi ➔
-            </button>
+
+          <!-- Simulation / Preview OTP Alert for Local Testing -->
+          <div id="simulation-banner" class="hidden bg-amber-50 border border-amber-300 text-amber-900 p-2.5 rounded-lg text-xs">
+            ⚡ <strong>Mode Pengujian Lokal:</strong> SMTP keluar dibatasi firewall container. Kode OTP preview: 
+            <code id="lbl-preview-otp" class="font-bold text-sm bg-amber-200 px-2 py-0.5 rounded"></code>
+          </div>
+
+          <div class="space-y-2">
+            <label class="block text-xs font-semibold text-slate-700">Kode OTP (6 Digit Angka)</label>
+            <div class="flex gap-2">
+              <input type="text" id="otp-code-input" placeholder="Contoh: 123456" maxlength="6"
+                     class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-center text-lg font-mono tracking-widest font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+              <button onclick="handleVerifyOtp()" id="btn-verify-otp" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-5 py-2 rounded-lg text-sm transition">
+                Verifikasi ➔
+              </button>
+            </div>
           </div>
 
           <div class="text-[11px] text-slate-500 flex justify-between items-center pt-2 border-t border-emerald-200">
-            <span>Request ID: <code id="lbl-request-id" class="font-mono text-emerald-900 font-semibold"></code></span>
-            <button onclick="handleResendOtp()" class="text-emerald-700 hover:underline">Kirim Ulang</button>
+            <span>Session ID: <code id="lbl-session-id" class="font-mono text-emerald-900 font-semibold text-[10px]"></code></span>
+            <button onclick="handleResendOtp()" class="text-emerald-700 font-semibold hover:underline">
+              Kirim Ulang Kode OTP
+            </button>
           </div>
         </div>
       </section>
@@ -126,7 +136,7 @@
       <section id="tab-register" class="tab-content hidden bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
         <div class="border-b pb-3">
           <h2 class="text-lg font-bold text-slate-800">Pendaftaran Akun Pasien Baru</h2>
-          <p class="text-xs text-slate-500">Menerbitkan ID Pengguna (`USR-PAS-XXXX`) dan Nomor RM (`RM-YYYY-XXXX`).</p>
+          <p class="text-xs text-slate-500">Menerbitkan ID Pengguna (`USR-PAS-XXXX`) dan Nomor RM (`RM-YYYY-XXXX`). Email wajib diisi untuk verifikasi OTP.</p>
         </div>
 
         <form id="form-register" onsubmit="handleRegister(event)" class="space-y-3 text-sm">
@@ -145,14 +155,32 @@
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Email Aktif (Untuk Terima OTP) *</label>
+              <input type="email" id="reg-email" placeholder="nama@email.com" required
+                     class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+            <div>
               <label class="block text-xs font-semibold text-slate-600 mb-1">Nomor WhatsApp Aktif *</label>
               <input type="text" id="reg-nowa" placeholder="081234567890" required
                      class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
             </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-semibold text-slate-600 mb-1">Kata Sandi (Min 6 Karakter) *</label>
               <input type="password" id="reg-password" value="Pasien123!" required
                      class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Poli Tujuan</label>
+              <select id="reg-poli" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <option value="1">Poli Umum</option>
+                <option value="2">Poli Umum & Geriatri</option>
+                <option value="3">Poli KIA / Anak</option>
+                <option value="4">Poli Gigi & Mulut</option>
+                <option value="5">Poli Kandungan</option>
+              </select>
             </div>
           </div>
 
@@ -162,7 +190,7 @@
                    class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-semibold text-slate-600 mb-1">Golongan Darah</label>
               <select id="reg-goldarah" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
@@ -177,16 +205,6 @@
               <label class="block text-xs font-semibold text-slate-600 mb-1">Nomor BPJS (Opsional)</label>
               <input type="text" id="reg-nobpjs" placeholder="13 digit" maxlength="13"
                      class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Poli Tujuan</label>
-              <select id="reg-poli" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-                <option value="1">Poli Umum</option>
-                <option value="2">Poli Umum & Geriatri</option>
-                <option value="3">Poli KIA / Anak</option>
-                <option value="4">Poli Gigi & Mulut</option>
-                <option value="5">Poli Kandungan</option>
-              </select>
             </div>
           </div>
 
@@ -250,6 +268,7 @@
             <div class="grid grid-cols-2 gap-2 text-slate-600 pt-1">
               <div><strong>ID User:</strong> <span id="prof-id">-</span></div>
               <div><strong>NIK:</strong> <span id="prof-nik">-</span></div>
+              <div><strong>Email:</strong> <span id="prof-email">-</span></div>
               <div><strong>WhatsApp:</strong> <span id="prof-wa">-</span></div>
               <div><strong>Jenis Kelamin:</strong> <span id="prof-gender">-</span></div>
               <div><strong>Tgl Lahir:</strong> <span id="prof-dob">-</span></div>
@@ -293,7 +312,7 @@
 
   <script>
     // State Variables
-    let currentRequestId = '';
+    let currentOtpSessionId = '';
     let currentJwtToken = localStorage.getItem('kliniku_jwt_token') || '';
     let realCaptchaToken = '';
 
@@ -389,6 +408,7 @@
       const payload = {
         nik: document.getElementById('reg-nik').value.trim(),
         nama: document.getElementById('reg-nama').value.trim(),
+        email: document.getElementById('reg-email').value.trim(),
         nowa: document.getElementById('reg-nowa').value.trim(),
         password: document.getElementById('reg-password').value,
         alamat: document.getElementById('reg-alamat').value.trim(),
@@ -417,7 +437,7 @@
       }
     }
 
-    // 4. Login (Step 1 -> Start WhatsApp Tap)
+    // 4. Login (Step 1 -> Start Email OTP)
     async function handleLogin(e) {
       e.preventDefault();
       const isTest = document.getElementById('use-test-captcha').checked;
@@ -443,26 +463,44 @@
         const data = await res.json();
         displayResponse(res.status, data);
 
-        if (res.ok && data.data && data.data.request_id) {
-          currentRequestId = data.data.request_id;
-          document.getElementById('lbl-request-id').textContent = currentRequestId;
-          document.getElementById('btn-open-wa').href = data.data.wa_deeplink || '#';
-          document.getElementById('wa-action-box').classList.remove('hidden');
+        if (res.ok && data.data && (data.data.otp_session_id || data.data.request_id)) {
+          currentOtpSessionId = data.data.otp_session_id || data.data.request_id;
+          document.getElementById('lbl-session-id').textContent = currentOtpSessionId;
+          document.getElementById('lbl-masked-email').textContent = data.data.masked_email || '-';
+          
+          // Simulation / preview OTP check
+          const simBanner = document.getElementById('simulation-banner');
+          if (data.is_simulation && data.data.preview_otp) {
+            simBanner.classList.remove('hidden');
+            document.getElementById('lbl-preview-otp').textContent = data.data.preview_otp;
+            document.getElementById('otp-code-input').value = data.data.preview_otp;
+          } else {
+            simBanner.classList.add('hidden');
+            document.getElementById('otp-code-input').value = '';
+          }
+
+          document.getElementById('otp-action-box').classList.remove('hidden');
+          document.getElementById('otp-code-input').focus();
         }
       } catch (err) {
         displayResponse(500, { error: err.message });
       }
     }
 
-    // 5. Verify OTP / Poll WhatsApp Tap (Step 2)
+    // 5. Verify Email OTP (Step 2)
     async function handleVerifyOtp() {
-      if (!currentRequestId) return alert('Belum ada sesi login aktif.');
+      if (!currentOtpSessionId) return alert('Belum ada sesi OTP aktif. Silakan lakukan login terlebih dahulu.');
+      const code = document.getElementById('otp-code-input').value.trim();
+      if (!code) return alert('Masukkan 6 digit kode OTP terlebih dahulu.');
 
       try {
         const res = await fetch('/api/v1/verify-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ request_id: currentRequestId }),
+          body: JSON.stringify({ 
+            otp_session_id: currentOtpSessionId,
+            otp_code: code 
+          }),
           credentials: 'same-origin'
         });
         const data = await res.json();
@@ -472,7 +510,7 @@
           currentJwtToken = data.data.authorization.token;
           localStorage.setItem('kliniku_jwt_token', currentJwtToken);
           document.getElementById('jwt-token-display').value = currentJwtToken;
-          alert('Verifikasi WhatsApp Sukses! Token JWT berhasil diterbitkan.');
+          alert('Verifikasi OTP Email Sukses! Token JWT berhasil diterbitkan.');
           switchTab('tab-profile');
           renderProfileCard(data.data.user);
         }
@@ -481,23 +519,33 @@
       }
     }
 
-    // 6. Resend OTP
+    // 6. Resend Email OTP
     async function handleResendOtp() {
-      if (!currentRequestId) return alert('Tidak ada request_id');
+      if (!currentOtpSessionId) return alert('Tidak ada sesi OTP yang dapat dikirim ulang.');
       try {
         const res = await fetch('/api/v1/resend-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ request_id: currentRequestId }),
+          body: JSON.stringify({ otp_session_id: currentOtpSessionId }),
           credentials: 'same-origin'
         });
         const data = await res.json();
         displayResponse(res.status, data);
         if (res.ok && data.data) {
-          currentRequestId = data.data.request_id;
-          document.getElementById('lbl-request-id').textContent = currentRequestId;
-          document.getElementById('btn-open-wa').href = data.data.wa_deeplink || '#';
-          alert('Sesi baru dibuat. Silakan buka tautan WhatsApp.');
+          currentOtpSessionId = data.data.otp_session_id || data.data.request_id;
+          document.getElementById('lbl-session-id').textContent = currentOtpSessionId;
+          document.getElementById('lbl-masked-email').textContent = data.data.masked_email || '-';
+          
+          const simBanner = document.getElementById('simulation-banner');
+          if (data.is_simulation && data.data.preview_otp) {
+            simBanner.classList.remove('hidden');
+            document.getElementById('lbl-preview-otp').textContent = data.data.preview_otp;
+            document.getElementById('otp-code-input').value = data.data.preview_otp;
+          } else {
+            simBanner.classList.add('hidden');
+            document.getElementById('otp-code-input').value = '';
+          }
+          alert('Kode OTP baru telah dikirimkan ke email Anda.');
         }
       } catch (err) {
         displayResponse(500, { error: err.message });
@@ -534,6 +582,7 @@
       document.getElementById('prof-norm').textContent = user.profile?.norm || 'RM-XXXX';
       document.getElementById('prof-id').textContent = user.user_id;
       document.getElementById('prof-nik').textContent = user.user_nik;
+      document.getElementById('prof-email').textContent = user.user_email || '-';
       document.getElementById('prof-wa').textContent = user.user_nowa;
       document.getElementById('prof-gender').textContent = user.profile?.jeniskelamin || '-';
       document.getElementById('prof-dob').textContent = user.profile?.tgllahir || '-';

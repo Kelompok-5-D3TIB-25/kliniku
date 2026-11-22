@@ -4,34 +4,33 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
+use App\Mail\OtpMail;
 use App\Models\User;
-use App\Services\FlowKirimService;
 use App\Services\JwtService;
 use App\Services\RecaptchaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 
 class LoginController extends Controller
 {
     protected RecaptchaService $recaptchaService;
     protected JwtService $jwtService;
-    protected FlowKirimService $flowKirimService;
 
     public function __construct(
         RecaptchaService $recaptchaService,
-        JwtService $jwtService,
-        FlowKirimService $flowKirimService
+        JwtService $jwtService
     ) {
         $this->recaptchaService = $recaptchaService;
         $this->jwtService = $jwtService;
-        $this->flowKirimService = $flowKirimService;
     }
 
     /**
-     * Step 1: Submit Credentials & ReCaptcha, start FlowKirim WhatsApp Tap-to-Verify.
+     * Step 1: Submit Credentials & reCAPTCHA, generate and send 6-digit Email OTP.
      */
     public function login(LoginRequest $request): JsonResponse
     {
@@ -71,86 +70,85 @@ class LoginController extends Controller
             ], 403);
         }
 
-        // 4. Trigger FlowKirim Verify Start (whatsapp_tap)
-        $verifyResult = $this->flowKirimService->startVerification($user->user_nowa, 'whatsapp_tap');
-
-        // Handle successful FlowKirim start
-        if ($verifyResult['success'] ?? false) {
-            $verifyData = $verifyResult['data'];
-            $requestId = $verifyData['request_id'];
-            $expiresIn = $verifyData['expires_in'] ?? 300;
-
-            // Store verification session in cache
-            Cache::put('flowkirim_session_' . $requestId, [
-                'user_id' => $user->user_id,
-                'user_nik' => $user->user_nik,
-                'phone' => $user->user_nowa,
-                'expires_at' => now()->addSeconds($expiresIn)->timestamp,
-            ], now()->addSeconds($expiresIn + 60));
-
+        // 4. Ensure User Has Registered Email
+        if (empty($user->user_email)) {
             return response()->json([
-                'success' => true,
-                'message' => 'Kredensial dan reCAPTCHA valid. Silakan selesaikan verifikasi via WhatsApp untuk masuk.',
-                'step' => 'otp_verification',
-                'data' => [
-                    'request_id' => $requestId,
-                    'channel' => $verifyData['channel'] ?? 'whatsapp_tap',
-                    'masked_phone' => $verifyData['masked_phone'] ?? '*********' . substr($user->user_nowa, -4),
-                    'wa_deeplink' => $verifyData['wa_deeplink'] ?? null,
-                    'wa_number' => $verifyData['wa_number'] ?? null,
-                    'expires_in' => $expiresIn,
-                    'action_guide' => 'Buka tautan wa_deeplink di WhatsApp lalu tekan Kirim. Kemudian periksa status dengan memanggil endpoint /api/v1/verify-otp.',
-                ],
-            ], 200);
+                'success' => false,
+                'message' => 'Akun Anda belum memiliki alamat email yang terdaftar untuk verifikasi OTP. Silakan hubungi bagian administrasi.',
+            ], 422);
         }
 
-        // Handle INSUFFICIENT_BALANCE or errors from FlowKirim
-        $errorCode = $verifyResult['error']['code'] ?? 'UNKNOWN_ERROR';
-        $errorMessage = $verifyResult['error']['message'] ?? 'Gagal memulai verifikasi FlowKirim.';
+        // 5. Generate 6-Digit OTP Code & Session ID
+        $otpCode = sprintf('%06d', random_int(100000, 999999));
+        $sessionId = 'otp_' . bin2hex(random_bytes(16));
+        $expiresIn = 300; // 5 minutes
 
-        // In testing / local development, provide simulated session if wallet balance is zero
-        if (app()->environment('local', 'testing') && $errorCode === 'INSUFFICIENT_BALANCE') {
-            $mockRequestId = 'mock-verify-' . bin2hex(random_bytes(8));
-            Cache::put('flowkirim_session_' . $mockRequestId, [
+        // Store session in Cache
+        Cache::put('email_otp_session_' . $sessionId, [
+            'user_id' => $user->user_id,
+            'user_nik' => $user->user_nik,
+            'email' => $user->user_email,
+            'otp_code' => $otpCode,
+            'expires_at' => now()->addSeconds($expiresIn)->timestamp,
+        ], now()->addSeconds($expiresIn + 30));
+
+        // 6. Send OTP Email via SMTP
+        $isSimulation = false;
+        try {
+            Mail::to($user->user_email)->send(new OtpMail($user->user_nama, $otpCode, $expiresIn));
+        } catch (\Throwable $e) {
+            Log::warning('SMTP Mail sending failed: ' . $e->getMessage(), [
                 'user_id' => $user->user_id,
-                'user_nik' => $user->user_nik,
-                'phone' => $user->user_nowa,
-                'expires_at' => now()->addSeconds(300)->timestamp,
-            ], 360);
+                'email' => $user->user_email,
+            ]);
 
-            return response()->json([
-                'success' => true,
-                'is_simulation' => true,
-                'message' => 'Kredensial valid. [SIMULASI TESTING: Saldo FlowKirim habis, sesi simulasi WhatsApp Tap dibuat otomatis agar pengujian dapat berjalan].',
-                'step' => 'otp_verification',
-                'data' => [
-                    'request_id' => $mockRequestId,
-                    'channel' => 'whatsapp_tap',
-                    'masked_phone' => '*********' . substr($user->user_nowa, -4),
-                    'wa_deeplink' => 'https://wa.me/6285113736221?text=VERIFY-SIMULATED-' . substr($mockRequestId, -8),
-                    'expires_in' => 300,
-                    'note' => 'Top up saldo FlowKirim untuk mengaktifkan pengiriman WhatsApp live.',
-                ],
-            ], 200);
+            // In local/testing environment, fallback gracefully if outbound SMTP port is blocked
+            if (app()->environment('local', 'testing')) {
+                $isSimulation = true;
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal mengirimkan kode OTP ke email Anda. Silakan coba kembali sesaat lagi.',
+                    'error' => config('app.debug') ? $e->getMessage() : null,
+                ], 500);
+            }
         }
 
-        return response()->json([
-            'success' => false,
-            'message' => 'Kredensial Anda benar, namun pengiriman verifikasi WhatsApp melalui FlowKirim belum dapat diproses (' . $errorCode . ': ' . $errorMessage . ').',
-            'error' => $verifyResult['error'] ?? null,
-        ], $verifyResult['http_status'] ?? 502);
+        $maskedEmail = $this->maskEmail($user->user_email);
+
+        $responsePayload = [
+            'success' => true,
+            'message' => "Kredensial dan reCAPTCHA valid. Kode OTP 6 digit telah dikirimkan ke email {$maskedEmail}.",
+            'step' => 'otp_verification',
+            'data' => [
+                'otp_session_id' => $sessionId,
+                'request_id' => $sessionId, // alias for backward compatibility
+                'channel' => 'email',
+                'masked_email' => $maskedEmail,
+                'expires_in' => $expiresIn,
+                'action_guide' => "Buka kotak masuk atau folder spam email {$maskedEmail}, salin 6 digit kode OTP, lalu verifikasi pada endpoint /api/v1/verify-otp.",
+            ],
+        ];
+
+        if ($isSimulation) {
+            $responsePayload['is_simulation'] = true;
+            $responsePayload['note'] = 'Mode Pengujian Lokal: Koneksi SMTP ke internet dibatasi oleh firewall, kode OTP tersimpan di sesi untuk verifikasi.';
+            $responsePayload['data']['preview_otp'] = $otpCode;
+        }
+
+        return response()->json($responsePayload, 200);
     }
 
     /**
-     * Step 2: Validate OTP / Poll Tap-to-Verify Status.
+     * Step 2: Validate 6-Digit Email OTP Code & Issue JWT Bearer Token.
      */
     public function verifyOtp(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'request_id' => ['required', 'string'],
-            'code' => ['nullable', 'string', 'min:4', 'max:8'],
-        ], [
-            'request_id.required' => 'Parameter request_id wajib disertakan.',
+            'otp_session_id' => ['nullable', 'string'],
+            'request_id' => ['nullable', 'string'],
+            'otp_code' => ['nullable', 'string'],
+            'code' => ['nullable', 'string'],
         ]);
 
         if ($validator->fails()) {
@@ -161,101 +159,92 @@ class LoginController extends Controller
             ], 422);
         }
 
-        $requestId = $request->input('request_id');
-        $session = Cache::get('flowkirim_session_' . $requestId);
+        $sessionId = $request->input('otp_session_id') ?: $request->input('request_id');
+        $inputCode = trim((string) ($request->input('otp_code') ?: $request->input('code')));
+
+        if (empty($sessionId)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Parameter otp_session_id (atau request_id) wajib disertakan.',
+            ], 422);
+        }
+
+        if (empty($inputCode)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Kode OTP 6 digit wajib dimasukkan.',
+            ], 422);
+        }
+
+        $session = Cache::get('email_otp_session_' . $sessionId);
 
         if (!$session) {
             return response()->json([
                 'success' => false,
                 'status' => 'expired',
-                'message' => 'Sesi verifikasi tidak ditemukan atau telah kedaluwarsa. Silakan lakukan login ulang.',
+                'message' => 'Sesi verifikasi OTP tidak ditemukan atau telah kedaluwarsa. Silakan lakukan login ulang.',
             ], 410);
         }
 
-        // Verify with FlowKirim: either manual code check or polling status
-        if ($request->filled('code')) {
-            $checkResult = $this->flowKirimService->checkCode($requestId, $request->input('code'));
-        } else {
-            $checkResult = $this->flowKirimService->checkStatus($requestId);
-        }
-
-        $status = $checkResult['status'] ?? 'pending';
-
-        if ($status === 'verified') {
-            /** @var User|null $user */
-            $user = User::with(['pasien.poli', 'dokter.poli', 'staf'])->find($session['user_id']);
-
-            if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Pengguna tidak ditemukan dalam sistem.',
-                ], 404);
-            }
-
-            // Issue JWT token
-            $token = $this->jwtService->generateToken($user);
-            Cache::forget('flowkirim_session_' . $requestId);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Verifikasi WhatsApp berhasil! Selamat datang di Portal KLINIKU.',
-                'data' => [
-                    'status' => 'verified',
-                    'user' => [
-                        'user_id' => $user->user_id,
-                        'user_role' => $user->user_role,
-                        'user_nama' => $user->user_nama,
-                        'user_nik' => $user->user_nik,
-                        'user_nowa' => $user->user_nowa,
-                        'user_email' => $user->user_email,
-                        'user_status' => $user->user_status,
-                        'profile' => $this->buildProfileData($user),
-                    ],
-                    'authorization' => [
-                        'token' => $token,
-                        'type' => 'Bearer',
-                        'expires_in' => $this->jwtService->getTtl(),
-                    ],
-                ],
-            ], 200);
-        }
-
-        if ($status === 'pending') {
+        // Validate OTP code
+        if ($inputCode !== (string) $session['otp_code']) {
             return response()->json([
                 'success' => false,
-                'status' => 'pending',
-                'message' => 'Menunggu verifikasi WhatsApp. Silakan buka tautan wa_deeplink dan kirim pesan verifikasi.',
-            ], 202);
+                'status' => 'invalid_code',
+                'message' => 'Kode OTP yang Anda masukkan salah. Silakan periksa kembali email Anda.',
+            ], 422);
         }
 
-        if ($status === 'expired') {
-            Cache::forget('flowkirim_session_' . $requestId);
+        /** @var User|null $user */
+        $user = User::with(['pasien.poli', 'dokter.poli', 'staf'])->find($session['user_id']);
+
+        if (!$user) {
             return response()->json([
                 'success' => false,
-                'status' => 'expired',
-                'message' => 'Sesi verifikasi WhatsApp telah kedaluwarsa. Silakan lakukan login ulang.',
-            ], 410);
+                'message' => 'Pengguna tidak ditemukan dalam sistem.',
+            ], 404);
         }
+
+        // Issue JWT token
+        $token = $this->jwtService->generateToken($user);
+        Cache::forget('email_otp_session_' . $sessionId);
 
         return response()->json([
-            'success' => false,
-            'status' => $status,
-            'message' => 'Kode atau status verifikasi tidak valid (' . $status . '). Silakan coba kembali.',
-        ], 422);
+            'success' => true,
+            'message' => 'Verifikasi OTP email berhasil! Selamat datang di Portal KLINIKU.',
+            'data' => [
+                'status' => 'verified',
+                'user' => [
+                    'user_id' => $user->user_id,
+                    'user_role' => $user->user_role,
+                    'user_nama' => $user->user_nama,
+                    'user_nik' => $user->user_nik,
+                    'user_nowa' => $user->user_nowa,
+                    'user_email' => $user->user_email,
+                    'user_status' => $user->user_status,
+                    'profile' => $this->buildProfileData($user),
+                ],
+                'authorization' => [
+                    'token' => $token,
+                    'type' => 'Bearer',
+                    'expires_in' => $this->jwtService->getTtl(),
+                ],
+            ],
+        ], 200);
     }
 
     /**
-     * Resend verification request.
+     * Resend verification request (send new OTP code).
      */
     public function resendOtp(Request $request): JsonResponse
     {
-        $requestId = $request->input('request_id');
-        $session = $requestId ? Cache::get('flowkirim_session_' . $requestId) : null;
+        $sessionId = $request->input('otp_session_id') ?: $request->input('request_id');
+        $session = $sessionId ? Cache::get('email_otp_session_' . $sessionId) : null;
 
         if (!$session) {
             return response()->json([
                 'success' => false,
-                'message' => 'Sesi verifikasi sebelumnya tidak ditemukan. Silakan login kembali.',
+                'message' => 'Sesi verifikasi sebelumnya tidak ditemukan atau telah kedaluwarsa. Silakan login kembali.',
             ], 404);
         }
 
@@ -267,65 +256,73 @@ class LoginController extends Controller
             ], 404);
         }
 
-        Cache::forget('flowkirim_session_' . $requestId);
+        Cache::forget('email_otp_session_' . $sessionId);
 
-        $verifyResult = $this->flowKirimService->startVerification($user->user_nowa, 'whatsapp_tap');
+        $newOtpCode = sprintf('%06d', random_int(100000, 999999));
+        $newSessionId = 'otp_' . bin2hex(random_bytes(16));
+        $expiresIn = 300;
 
-        if ($verifyResult['success'] ?? false) {
-            $newRequestId = $verifyResult['data']['request_id'];
-            $expiresIn = $verifyResult['data']['expires_in'] ?? 300;
+        Cache::put('email_otp_session_' . $newSessionId, [
+            'user_id' => $user->user_id,
+            'user_nik' => $user->user_nik,
+            'email' => $user->user_email,
+            'otp_code' => $newOtpCode,
+            'expires_at' => now()->addSeconds($expiresIn)->timestamp,
+        ], now()->addSeconds($expiresIn + 30));
 
-            Cache::put('flowkirim_session_' . $newRequestId, [
-                'user_id' => $user->user_id,
-                'user_nik' => $user->user_nik,
-                'phone' => $user->user_nowa,
-                'expires_at' => now()->addSeconds($expiresIn)->timestamp,
-            ], now()->addSeconds($expiresIn + 60));
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Permintaan verifikasi WhatsApp baru berhasil dibuat.',
-                'data' => $verifyResult['data'],
-            ]);
+        $isSimulation = false;
+        try {
+            Mail::to($user->user_email)->send(new OtpMail($user->user_nama, $newOtpCode, $expiresIn));
+        } catch (\Throwable $e) {
+            Log::warning('Resend SMTP Mail failed: ' . $e->getMessage());
+            if (app()->environment('local', 'testing')) {
+                $isSimulation = true;
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal mengirimkan kode OTP baru ke email Anda.',
+                ], 500);
+            }
         }
 
-        // Local simulation fallback
-        if (app()->environment('local', 'testing')) {
-            $mockRequestId = 'mock-verify-' . bin2hex(random_bytes(8));
-            Cache::put('flowkirim_session_' . $mockRequestId, [
-                'user_id' => $user->user_id,
-                'user_nik' => $user->user_nik,
-                'phone' => $user->user_nowa,
-                'expires_at' => now()->addSeconds(300)->timestamp,
-            ], 360);
+        $maskedEmail = $this->maskEmail($user->user_email);
 
-            return response()->json([
-                'success' => true,
-                'is_simulation' => true,
-                'message' => 'Permintaan verifikasi simulasi dibuat.',
-                'data' => [
-                    'request_id' => $mockRequestId,
-                    'channel' => 'whatsapp_tap',
-                    'wa_deeplink' => 'https://wa.me/6285113736221?text=VERIFY-SIMULATED',
-                    'expires_in' => 300,
-                ],
-            ]);
+        $responsePayload = [
+            'success' => true,
+            'message' => "Kode OTP baru telah berhasil dikirimkan ke email {$maskedEmail}.",
+            'data' => [
+                'otp_session_id' => $newSessionId,
+                'request_id' => $newSessionId,
+                'channel' => 'email',
+                'masked_email' => $maskedEmail,
+                'expires_in' => $expiresIn,
+            ],
+        ];
+
+        if ($isSimulation) {
+            $responsePayload['is_simulation'] = true;
+            $responsePayload['data']['preview_otp'] = $newOtpCode;
         }
 
-        return response()->json([
-            'success' => false,
-            'message' => 'Gagal mengirim ulang verifikasi via FlowKirim.',
-            'error' => $verifyResult['error'] ?? null,
-        ], 502);
+        return response()->json($responsePayload, 200);
     }
 
     /**
-     * Get authenticated user profile using Bearer JWT token.
+     * Get Current Authenticated User Profile (Protected).
      */
     public function me(Request $request): JsonResponse
     {
-        /** @var User $user */
+        /** @var User|null $user */
         $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pengguna tidak terotentikasi.',
+            ], 401);
+        }
+
+        $user->loadMissing(['pasien.poli', 'dokter.poli', 'staf']);
 
         return response()->json([
             'success' => true,
@@ -339,22 +336,22 @@ class LoginController extends Controller
                 'user_status' => $user->user_status,
                 'profile' => $this->buildProfileData($user),
             ],
-        ]);
+        ], 200);
     }
 
     /**
-     * End user session / logout.
+     * Terminate / Logout Session (Protected).
      */
-    public function logout(): JsonResponse
+    public function logout(Request $request): JsonResponse
     {
         return response()->json([
             'success' => true,
             'message' => 'Logout berhasil. Sesi Anda telah diakhiri.',
-        ]);
+        ], 200);
     }
 
     /**
-     * Helper to format profile data by role.
+     * Build polymorphic profile data according to user role.
      */
     protected function buildProfileData(User $user): ?array
     {
@@ -362,7 +359,7 @@ class LoginController extends Controller
             return [
                 'norm' => $user->pasien->pasien_norm,
                 'jeniskelamin' => $user->pasien->pasien_jeniskelamin,
-                'tgllahir' => $user->pasien->pasien_tgllahir,
+                'tgllahir' => $user->pasien->pasien_tgllahir ? (is_string($user->pasien->pasien_tgllahir) ? substr($user->pasien->pasien_tgllahir, 0, 10) : $user->pasien->pasien_tgllahir->format('Y-m-d')) : null,
                 'alamat' => $user->pasien->pasien_alamat,
                 'nobpjs' => $user->pasien->pasien_nobpjs,
                 'goldarah' => $user->pasien->pasien_goldarah,
@@ -375,7 +372,6 @@ class LoginController extends Controller
             return [
                 'sip' => $user->dokter->dokter_sip,
                 'spesialisasi' => $user->dokter->dokter_spesialisasi,
-                'kuotaharian' => $user->dokter->dokter_kuotaharian,
                 'poli' => $user->dokter->poli?->poli_nama,
             ];
         }
@@ -383,11 +379,34 @@ class LoginController extends Controller
         if ($user->user_role === 'staf' && $user->staf) {
             return [
                 'jabatan' => $user->staf->staf_jabatan,
-                'shift' => $user->staf->staf_shiftnama,
-                'jam_kerja' => $user->staf->staf_shiftmulai . ' - ' . $user->staf->staf_shiftselesai,
+                'shift' => $user->staf->staf_shift,
             ];
         }
 
         return null;
+    }
+
+    /**
+     * Helper to mask email address for privacy.
+     * e.g., lintarkertapati@student.uns.ac.id -> l***i@student.uns.ac.id
+     */
+    protected function maskEmail(string $email): string
+    {
+        $parts = explode('@', $email);
+        if (count($parts) !== 2) {
+            return '****@****';
+        }
+
+        $username = $parts[0];
+        $domain = $parts[1];
+
+        $len = strlen($username);
+        if ($len <= 2) {
+            $maskedUsername = substr($username, 0, 1) . '*';
+        } else {
+            $maskedUsername = substr($username, 0, 1) . str_repeat('*', min(4, $len - 2)) . substr($username, -1);
+        }
+
+        return $maskedUsername . '@' . $domain;
     }
 }

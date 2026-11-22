@@ -49,7 +49,7 @@ class PatientRegistrationTest extends TestCase
         $response = $this->postJson('/api/register', []);
 
         $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['nik', 'nama', 'nowa', 'password', 'alamat']);
+        $response->assertJsonValidationErrors(['nik', 'nama', 'email', 'nowa', 'password', 'alamat']);
     }
 
     public function test_registration_validation_fails_on_invalid_nik_format(): void
@@ -57,6 +57,7 @@ class PatientRegistrationTest extends TestCase
         $response = $this->postJson('/api/register', [
             'nik' => '12345', // not 16 digits
             'nama' => 'Testing Pasien',
+            'email' => 'testing.pasien@example.com',
             'nowa' => '081299999999',
             'password' => 'Secret123!',
             'alamat' => 'Jl. Test No. 1',
@@ -74,6 +75,7 @@ class PatientRegistrationTest extends TestCase
         $response = $this->postJson('/api/register', [
             'nik' => $existingNik,
             'nama' => 'Duplicate Patient Test',
+            'email' => 'duplicate.patient@example.com',
             'nowa' => '081299999999',
             'password' => 'Secret123!',
             'alamat' => 'Jl. Test No. 2',
@@ -93,6 +95,7 @@ class PatientRegistrationTest extends TestCase
         $payload = [
             'nik' => $testNik,
             'nama' => 'Siti Nurhaliza Test',
+            'email' => 'siti.nurhaliza.test@gmail.com',
             'nowa' => '081298765432',
             'password' => 'PasienSecret123!',
             'alamat' => 'Jl. Kemuning No. 15, Jebres, Surakarta',
@@ -110,6 +113,7 @@ class PatientRegistrationTest extends TestCase
                 'user_role' => 'pasien',
                 'user_nama' => 'Siti Nurhaliza Test',
                 'user_nik' => $testNik,
+                'user_email' => 'siti.nurhaliza.test@gmail.com',
                 'pasien_jeniskelamin' => 'Perempuan',
                 'pasien_tgllahir' => '1999-05-10',
                 'pasien_goldarah' => 'B',
