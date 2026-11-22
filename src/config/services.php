@@ -35,4 +35,22 @@ return [
         ],
     ],
 
+    'recaptcha' => [
+        'site_key' => env('RECAPTCHA_SITE_KEY', '6LfEiisuAAAAAM1dgo05Kv4IqPwYUF5NTWbDUN9V'),
+        'secret_key' => env('RECAPTCHA_SECRET_KEY', '6LfEiisuAAAAAEPuGqfaxFfGOtUGHNdZq0djWVkd'),
+    ],
+
+    'jwt' => [
+        'secret' => env('JWT_SECRET', env('APP_KEY')),
+        'ttl' => (int) env('JWT_TTL', 86400),
+    ],
+
+    'flowkirim' => [
+        'api_key' => env('FLOWKIRIM_API_KEY', 'fk_live_25ebb5646a8d7afd3d9e526d394f81098a8e48b0ed355b0a'),
+        'base_url' => env('FLOWKIRIM_BASE_URL', 'https://scan.flowkirim.com/api/v1/verify'),
+        'channel' => env('FLOWKIRIM_DEFAULT_CHANNEL', 'whatsapp_tap'),
+        'brand' => env('FLOWKIRIM_BRAND', 'KLINIKU'),
+        'ttl' => (int) env('FLOWKIRIM_TTL', 300),
+    ],
+
 ];
