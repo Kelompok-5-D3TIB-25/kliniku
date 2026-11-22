@@ -69,7 +69,7 @@ class RegisterController extends Controller
                     'user_nama' => trim($validated['nama']),
                     'user_nik' => $validated['nik'],
                     'user_nowa' => $nowa,
-                    'user_email' => null,
+                    'user_email' => strtolower(trim($validated['email'])),
                     'user_password' => Hash::make($validated['password']),
                     'user_status' => 'aktif',
                 ]);
@@ -105,6 +105,7 @@ class RegisterController extends Controller
                     'user_nama' => $user->user_nama,
                     'user_nik' => $user->user_nik,
                     'user_nowa' => $user->user_nowa,
+                    'user_email' => $user->user_email,
                     'pasien_norm' => $pasien->pasien_norm,
                     'pasien_jeniskelamin' => $pasien->pasien_jeniskelamin,
                     'pasien_tgllahir' => $pasien->pasien_tgllahir,

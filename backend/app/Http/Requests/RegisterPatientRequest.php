@@ -36,6 +36,13 @@ class RegisterPatientRequest extends FormRequest
                 'min:2',
                 'max:150',
             ],
+            'email' => [
+                'required',
+                'string',
+                'email',
+                'max:100',
+                'unique:user,user_email',
+            ],
             'nowa' => [
                 'required',
                 'string',
@@ -101,6 +108,9 @@ class RegisterPatientRequest extends FormRequest
             'nama.required' => 'Nama lengkap wajib diisi.',
             'nama.min' => 'Nama lengkap minimal terdiri dari 2 karakter.',
             'nama.max' => 'Nama lengkap maksimal 150 karakter.',
+            'email.required' => 'Alamat email wajib diisi untuk verifikasi OTP.',
+            'email.email' => 'Format alamat email tidak valid.',
+            'email.unique' => 'Alamat email sudah terdaftar dalam sistem KLINIKU.',
             'nowa.required' => 'Nomor WhatsApp wajib diisi.',
             'nowa.regex' => 'Format nomor WhatsApp tidak valid. Gunakan format yang valid seperti 081234567890.',
             'nowa.min' => 'Nomor WhatsApp minimal 10 digit.',

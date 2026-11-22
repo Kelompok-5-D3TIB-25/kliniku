@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KLINIKU — API Test & Preview Client</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google reCAPTCHA v2 Script -->
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  <style>
+    pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-emerald-600 text-white shadow-md">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <span class="text-3xl">🏥</span>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight">KLINIKU API Client</h1>
+          <p class="text-xs text-emerald-100">Live API Tester untuk InfinityFree & Pengujian Lokal (SMTP Email OTP)</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full font-medium bg-emerald-800 text-emerald-100">
+          Backend API v1
+        </span>
+        <button onclick="pingServer()" class="bg-white text-emerald-700 hover:bg-emerald-50 px-3 py-1 rounded font-semibold transition">
+          🔄 Cek Koneksi DB
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- Left Column: Interactive Forms (7 cols) -->
+    <div class="lg:col-span-7 space-y-6">
+
+      <!-- Navigation Tabs -->
+      <div class="flex border-b border-slate-200 gap-1 overflow-x-auto pb-1 text-sm font-medium">
+        <button onclick="switchTab('tab-login')" id="btn-tab-login" class="tab-btn px-4 py-2 border-b-2 border-emerald-600 text-emerald-700 font-bold">1. Login & OTP Email</button>
+        <button onclick="switchTab('tab-register')" id="btn-tab-register" class="tab-btn px-4 py-2 text-slate-500 hover:text-slate-700">2. Registrasi Pasien</button>
+        <button onclick="switchTab('tab-check')" id="btn-tab-check" class="tab-btn px-4 py-2 text-slate-500 hover:text-slate-700">3. Validasi NIK</button>
+        <button onclick="switchTab('tab-profile')" id="btn-tab-profile" class="tab-btn px-4 py-2 text-slate-500 hover:text-slate-700">4. Profil Pasien (/me)</button>
+      </div>
+
+      <!-- TAB 1: LOGIN & EMAIL OTP -->
+      <section id="tab-login" class="tab-content bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+        <div class="border-b pb-3">
+          <h2 class="text-lg font-bold text-slate-800">Login Pasien & Verifikasi Email OTP</h2>
+          <p class="text-xs text-slate-500">Mendukung proteksi Google reCAPTCHA v2 & Pengiriman Kode OTP 6-Digit via SMTP Gmail.</p>
+        </div>
+
+        <form id="form-login" onsubmit="handleLogin(event)" class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">NIK (16 Digit)</label>
+            <input type="text" id="login-nik" value="3372020912254658" maxlength="16" required
+                   class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            <span class="text-[11px] text-slate-400">Contoh akun seeder: <code>3372020912254658</code> (Yusuf Hidayat - lintarkertapati@student.uns.ac.id)</span>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Kata Sandi</label>
+            <input type="password" id="login-password" value="Pasien123!" required
+                   class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+          </div>
+
+          <!-- reCAPTCHA Mode -->
+          <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-semibold text-slate-700">Verifikasi Google reCAPTCHA</label>
+              <label class="text-xs flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" id="use-test-captcha" checked onchange="toggleCaptchaMode()">
+                <span class="text-slate-600">Gunakan Test Token Lokal</span>
+              </label>
+            </div>
+
+            <!-- Real Widget -->
+            <div id="captcha-real-container" class="hidden">
+              <div class="g-recaptcha" data-sitekey="6LfEiisuAAAAAM1dgo05Kv4IqPwYUF5NTWbDUN9V" data-callback="onCaptchaResolved"></div>
+            </div>
+
+            <!-- Test Token Indicator -->
+            <div id="captcha-test-container" class="text-xs text-emerald-700 bg-emerald-50 p-2 rounded border border-emerald-200">
+              ⚡ Mode Test Aktif: Token otomatis menggunakan <code>test-valid-token</code>.
+            </div>
+          </div>
+
+          <button type="submit" id="btn-submit-login" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg text-sm transition flex items-center justify-center gap-2">
+            <span>Masuk & Kirim OTP ke Email</span>
+          </button>
+        </form>
+
+        <!-- Email OTP Verification Box (Appears after Step 1 Login Success) -->
+        <div id="otp-action-box" class="hidden mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
+          <div class="flex items-center gap-2 text-emerald-800 font-bold text-sm">
+            <span>📧</span> Langkah 2: Masukkan 6 Digit Kode OTP
+          </div>
+          <p class="text-xs text-slate-600">
+            Kredensial valid! Kode OTP 6 digit telah dikirimkan ke alamat email: <strong id="lbl-masked-email" class="text-emerald-800"></strong>.
+          </p>
+
+          <!-- Simulation / Preview OTP Alert for Local Testing -->
+          <div id="simulation-banner" class="hidden bg-amber-50 border border-amber-300 text-amber-900 p-2.5 rounded-lg text-xs">
+            ⚡ <strong>Mode Pengujian Lokal:</strong> SMTP keluar dibatasi firewall container. Kode OTP preview: 
+            <code id="lbl-preview-otp" class="font-bold text-sm bg-amber-200 px-2 py-0.5 rounded"></code>
+          </div>
+
+          <div class="space-y-2">
+            <label class="block text-xs font-semibold text-slate-700">Kode OTP (6 Digit Angka)</label>
+            <div class="flex gap-2">
+              <input type="text" id="otp-code-input" placeholder="Contoh: 123456" maxlength="6"
+                     class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-center text-lg font-mono tracking-widest font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+              <button onclick="handleVerifyOtp()" id="btn-verify-otp" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-5 py-2 rounded-lg text-sm transition">
+                Verifikasi ➔
+              </button>
+            </div>
+          </div>
+
+          <div class="text-[11px] text-slate-500 flex justify-between items-center pt-2 border-t border-emerald-200">
+            <span>Session ID: <code id="lbl-session-id" class="font-mono text-emerald-900 font-semibold text-[10px]"></code></span>
+            <button onclick="handleResendOtp()" class="text-emerald-700 font-semibold hover:underline">
+              Kirim Ulang Kode OTP
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: REGISTRASI PASIEN -->
+      <section id="tab-register" class="tab-content hidden bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+        <div class="border-b pb-3">
+          <h2 class="text-lg font-bold text-slate-800">Pendaftaran Akun Pasien Baru</h2>
+          <p class="text-xs text-slate-500">Menerbitkan ID Pengguna (`USR-PAS-XXXX`) dan Nomor RM (`RM-YYYY-XXXX`). Email wajib diisi untuk verifikasi OTP.</p>
+        </div>
+
+        <form id="form-register" onsubmit="handleRegister(event)" class="space-y-3 text-sm">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">NIK (16 Digit) *</label>
+              <input type="text" id="reg-nik" placeholder="3372010101990001" maxlength="16" required
+                     class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Nama Lengkap *</label>
+              <input type="text" id="reg-nama" placeholder="Contoh: Rina Kusuma" required
+                     class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Email Aktif (Untuk Terima OTP) *</label>
+              <input type="email" id="reg-email" placeholder="nama@email.com" required
+                     class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Nomor WhatsApp Aktif *</label>
+              <input type="text" id="reg-nowa" placeholder="081234567890" required
+                     class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Kata Sandi (Min 6 Karakter) *</label>
+              <input type="password" id="reg-password" value="Pasien123!" required
+                     class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Poli Tujuan</label>
+              <select id="reg-poli" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <option value="1">Poli Umum</option>
+                <option value="2">Poli Umum & Geriatri</option>
+                <option value="3">Poli KIA / Anak</option>
+                <option value="4">Poli Gigi & Mulut</option>
+                <option value="5">Poli Kandungan</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Alamat Domisili Lengkap *</label>
+            <input type="text" id="reg-alamat" placeholder="Jl. Slamet Riyadi No. 12, Surakarta" required
+                   class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Golongan Darah</label>
+              <select id="reg-goldarah" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <option value="">Pilih</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="AB">AB</option>
+                <option value="O">O</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Nomor BPJS (Opsional)</label>
+              <input type="text" id="reg-nobpjs" placeholder="13 digit" maxlength="13"
+                     class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+          </div>
+
+          <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg text-sm transition">
+            Daftarkan Akun Pasien Baru
+          </button>
+        </form>
+      </section>
+
+      <!-- TAB 3: CHECK NIK -->
+      <section id="tab-check" class="tab-content hidden bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+        <div class="border-b pb-3">
+          <h2 class="text-lg font-bold text-slate-800">Live Validation & Ekstraksi NIK</h2>
+          <p class="text-xs text-slate-500">Mengecek ketersediaan NIK di database serta membaca otomatis jenis kelamin, tanggal lahir, dan usia.</p>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Masukkan 16 Digit NIK</label>
+            <div class="flex gap-2">
+              <input type="text" id="check-nik-input" placeholder="Masukkan 16 digit NIK" maxlength="16" value="3372020912254658"
+                     class="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+              <button onclick="handleCheckNik()" class="bg-slate-800 hover:bg-slate-900 text-white font-semibold px-4 py-2 rounded-lg text-sm transition">
+                Cek NIK
+              </button>
+            </div>
+          </div>
+          <div id="check-nik-result-badge" class="hidden p-3 rounded-lg text-xs font-medium"></div>
+        </div>
+      </section>
+
+      <!-- TAB 4: PROFILE ME & LOGOUT -->
+      <section id="tab-profile" class="tab-content hidden bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+        <div class="border-b pb-3 flex justify-between items-center">
+          <div>
+            <h2 class="text-lg font-bold text-slate-800">Profil Pasien Terotentikasi (/me)</h2>
+            <p class="text-xs text-slate-500">Memerlukan Authorization: Bearer &lt;JWT_TOKEN&gt;.</p>
+          </div>
+          <button onclick="handleLogout()" class="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded font-semibold transition">
+            Logout
+          </button>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Token JWT Aktif</label>
+            <textarea id="jwt-token-display" rows="2" placeholder="Belum ada token. Silakan login terlebih dahulu."
+                      class="w-full px-3 py-2 border rounded-lg text-xs font-mono bg-slate-50 focus:outline-none"></textarea>
+          </div>
+
+          <button onclick="handleFetchProfile()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2 rounded-lg text-xs transition">
+            Ambil Data Profil Pasien (/api/v1/me)
+          </button>
+
+          <!-- Profile Card -->
+          <div id="profile-card" class="hidden bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2 text-xs">
+            <div class="flex justify-between items-center border-b pb-2">
+              <span class="font-bold text-slate-800 text-sm" id="prof-nama">-</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold" id="prof-norm">RM-XXXX</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-slate-600 pt-1">
+              <div><strong>ID User:</strong> <span id="prof-id">-</span></div>
+              <div><strong>NIK:</strong> <span id="prof-nik">-</span></div>
+              <div><strong>Email:</strong> <span id="prof-email">-</span></div>
+              <div><strong>WhatsApp:</strong> <span id="prof-wa">-</span></div>
+              <div><strong>Jenis Kelamin:</strong> <span id="prof-gender">-</span></div>
+              <div><strong>Tgl Lahir:</strong> <span id="prof-dob">-</span></div>
+              <div><strong>Poli:</strong> <span id="prof-poli">-</span></div>
+              <div class="col-span-2"><strong>Alamat:</strong> <span id="prof-alamat">-</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Right Column: API Request & Response Inspector (5 cols) -->
+    <div class="lg:col-span-5 space-y-4">
+      <div class="bg-slate-900 text-slate-100 rounded-xl p-4 shadow-sm space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-700 pb-2">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-rose-500"></span>
+            <span class="w-3 h-3 rounded-full bg-amber-500"></span>
+            <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+            <span class="text-xs font-mono font-bold text-slate-300 ml-2">Console & Response Inspector</span>
+          </div>
+          <button onclick="clearConsole()" class="text-[11px] text-slate-400 hover:text-white">Clear</button>
+        </div>
+
+        <div>
+          <div class="text-[11px] font-mono text-slate-400 mb-1">Status Terakhir:</div>
+          <div id="res-status-badge" class="inline-block px-2.5 py-0.5 rounded text-xs font-mono font-bold bg-slate-800 text-slate-300">
+            READY
+          </div>
+        </div>
+
+        <div>
+          <div class="text-[11px] font-mono text-slate-400 mb-1">Payload JSON Respons:</div>
+          <pre id="json-viewer" class="bg-slate-950 p-3 rounded-lg text-xs text-emerald-400 overflow-x-auto max-h-[500px] border border-slate-800 leading-relaxed">{ "message": "Pilih salah satu endpoint untuk melakukan pengujian API..." }</pre>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // State Variables
+    let currentOtpSessionId = '';
+    let currentJwtToken = localStorage.getItem('kliniku_jwt_token') || '';
+    let realCaptchaToken = '';
+
+    window.onload = () => {
+      if (currentJwtToken) {
+        document.getElementById('jwt-token-display').value = currentJwtToken;
+      }
+      pingServer();
+    };
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(el => {
+        el.classList.remove('border-b-2', 'border-emerald-600', 'text-emerald-700', 'font-bold');
+        el.classList.add('text-slate-500');
+      });
+
+      document.getElementById(tabId).classList.remove('hidden');
+      const activeBtn = document.getElementById('btn-' + tabId);
+      activeBtn.classList.remove('text-slate-500');
+      activeBtn.classList.add('border-b-2', 'border-emerald-600', 'text-emerald-700', 'font-bold');
+    }
+
+    function toggleCaptchaMode() {
+      const isTest = document.getElementById('use-test-captcha').checked;
+      document.getElementById('captcha-test-container').classList.toggle('hidden', !isTest);
+      document.getElementById('captcha-real-container').classList.toggle('hidden', isTest);
+    }
+
+    function onCaptchaResolved(token) {
+      realCaptchaToken = token;
+    }
+
+    function displayResponse(status, data) {
+      const badge = document.getElementById('res-status-badge');
+      badge.textContent = `HTTP ${status}`;
+      badge.className = status >= 200 && status < 300 
+        ? 'inline-block px-2.5 py-0.5 rounded text-xs font-mono font-bold bg-emerald-900 text-emerald-200'
+        : 'inline-block px-2.5 py-0.5 rounded text-xs font-mono font-bold bg-rose-900 text-rose-200';
+
+      document.getElementById('json-viewer').textContent = JSON.stringify(data, null, 2);
+    }
+
+    function clearConsole() {
+      document.getElementById('res-status-badge').textContent = 'READY';
+      document.getElementById('res-status-badge').className = 'inline-block px-2.5 py-0.5 rounded text-xs font-mono font-bold bg-slate-800 text-slate-300';
+      document.getElementById('json-viewer').textContent = '// Console dikosongkan';
+    }
+
+    // 1. Cek Koneksi / Poliklinik
+    async function pingServer() {
+      try {
+        const res = await fetch('/api/v1/polis', { credentials: 'same-origin' });
+        const data = await res.json();
+        displayResponse(res.status, data);
+      } catch (err) {
+        displayResponse(500, { error: err.message, note: 'Gagal terhubung ke API' });
+      }
+    }
+
+    // 2. Check NIK Live
+    async function handleCheckNik() {
+      const nik = document.getElementById('check-nik-input').value.trim();
+      if (!nik) return alert('Masukkan NIK terlebih dahulu');
+
+      try {
+        const res = await fetch('/api/v1/check-nik', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ nik }),
+          credentials: 'same-origin'
+        });
+        const data = await res.json();
+        displayResponse(res.status, data);
+
+        const badge = document.getElementById('check-nik-result-badge');
+        badge.classList.remove('hidden');
+        if (data.available) {
+          badge.className = 'p-3 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200';
+          badge.innerHTML = `✅ <strong>NIK Tersedia:</strong> ${data.nik_info.gender}, Tgl Lahir: ${data.nik_info.birth_date} (Usia ${data.nik_info.age} thn).`;
+        } else {
+          badge.className = 'p-3 rounded-lg text-xs font-medium bg-rose-50 text-rose-800 border border-rose-200';
+          badge.innerHTML = `❌ <strong>NIK Terdaftar / Invalid:</strong> ${data.message}`;
+        }
+      } catch (err) {
+        displayResponse(500, { error: err.message });
+      }
+    }
+
+    // 3. Register Pasien
+    async function handleRegister(e) {
+      e.preventDefault();
+      const payload = {
+        nik: document.getElementById('reg-nik').value.trim(),
+        nama: document.getElementById('reg-nama').value.trim(),
+        email: document.getElementById('reg-email').value.trim(),
+        nowa: document.getElementById('reg-nowa').value.trim(),
+        password: document.getElementById('reg-password').value,
+        alamat: document.getElementById('reg-alamat').value.trim(),
+        goldarah: document.getElementById('reg-goldarah').value || null,
+        nobpjs: document.getElementById('reg-nobpjs').value.trim() || null,
+        poli_id: parseInt(document.getElementById('reg-poli').value) || null
+      };
+
+      try {
+        const res = await fetch('/api/v1/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify(payload),
+          credentials: 'same-origin'
+        });
+        const data = await res.json();
+        displayResponse(res.status, data);
+
+        if (res.ok) {
+          alert('Pendaftaran Pasien Berhasil!\nNomor RM: ' + data.data.pasien_norm + '\nSilakan lanjut ke tab Login.');
+          document.getElementById('login-nik').value = payload.nik;
+          switchTab('tab-login');
+        }
+      } catch (err) {
+        displayResponse(500, { error: err.message });
+      }
+    }
+
+    // 4. Login (Step 1 -> Start Email OTP)
+    async function handleLogin(e) {
+      e.preventDefault();
+      const isTest = document.getElementById('use-test-captcha').checked;
+      const recaptcha_token = isTest ? 'test-valid-token' : realCaptchaToken;
+
+      if (!recaptcha_token) {
+        return alert('Harap selesaikan centang "Saya bukan robot" pada widget reCAPTCHA.');
+      }
+
+      const payload = {
+        nik: document.getElementById('login-nik').value.trim(),
+        password: document.getElementById('login-password').value,
+        recaptcha_token: recaptcha_token
+      };
+
+      try {
+        const res = await fetch('/api/v1/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify(payload),
+          credentials: 'same-origin'
+        });
+        const data = await res.json();
+        displayResponse(res.status, data);
+
+        if (res.ok && data.data && (data.data.otp_session_id || data.data.request_id)) {
+          currentOtpSessionId = data.data.otp_session_id || data.data.request_id;
+          document.getElementById('lbl-session-id').textContent = currentOtpSessionId;
+          document.getElementById('lbl-masked-email').textContent = data.data.masked_email || '-';
+          
+          // Simulation / preview OTP check
+          const simBanner = document.getElementById('simulation-banner');
+          if (data.is_simulation && data.data.preview_otp) {
+            simBanner.classList.remove('hidden');
+            document.getElementById('lbl-preview-otp').textContent = data.data.preview_otp;
+            document.getElementById('otp-code-input').value = data.data.preview_otp;
+          } else {
+            simBanner.classList.add('hidden');
+            document.getElementById('otp-code-input').value = '';
+          }
+
+          document.getElementById('otp-action-box').classList.remove('hidden');
+          document.getElementById('otp-code-input').focus();
+        }
+      } catch (err) {
+        displayResponse(500, { error: err.message });
+      }
+    }
+
+    // 5. Verify Email OTP (Step 2)
+    async function handleVerifyOtp() {
+      if (!currentOtpSessionId) return alert('Belum ada sesi OTP aktif. Silakan lakukan login terlebih dahulu.');
+      const code = document.getElementById('otp-code-input').value.trim();
+      if (!code) return alert('Masukkan 6 digit kode OTP terlebih dahulu.');
+
+      try {
+        const res = await fetch('/api/v1/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ 
+            otp_session_id: currentOtpSessionId,
+            otp_code: code 
+          }),
+          credentials: 'same-origin'
+        });
+        const data = await res.json();
+        displayResponse(res.status, data);
+
+        if (res.ok && data.data && data.data.status === 'verified') {
+          currentJwtToken = data.data.authorization.token;
+          localStorage.setItem('kliniku_jwt_token', currentJwtToken);
+          document.getElementById('jwt-token-display').value = currentJwtToken;
+          alert('Verifikasi OTP Email Sukses! Token JWT berhasil diterbitkan.');
+          switchTab('tab-profile');
+          renderProfileCard(data.data.user);
+        }
+      } catch (err) {
+        displayResponse(500, { error: err.message });
+      }
+    }
+
+    // 6. Resend Email OTP
+    async function handleResendOtp() {
+      if (!currentOtpSessionId) return alert('Tidak ada sesi OTP yang dapat dikirim ulang.');
+      try {
+        const res = await fetch('/api/v1/resend-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ otp_session_id: currentOtpSessionId }),
+          credentials: 'same-origin'
+        });
+        const data = await res.json();
+        displayResponse(res.status, data);
+        if (res.ok && data.data) {
+          currentOtpSessionId = data.data.otp_session_id || data.data.request_id;
+          document.getElementById('lbl-session-id').textContent = currentOtpSessionId;
+          document.getElementById('lbl-masked-email').textContent = data.data.masked_email || '-';
+          
+          const simBanner = document.getElementById('simulation-banner');
+          if (data.is_simulation && data.data.preview_otp) {
+            simBanner.classList.remove('hidden');
+            document.getElementById('lbl-preview-otp').textContent = data.data.preview_otp;
+            document.getElementById('otp-code-input').value = data.data.preview_otp;
+          } else {
+            simBanner.classList.add('hidden');
+            document.getElementById('otp-code-input').value = '';
+          }
+          alert('Kode OTP baru telah dikirimkan ke email Anda.');
+        }
+      } catch (err) {
+        displayResponse(500, { error: err.message });
+      }
+    }
+
+    // 7. Fetch Profile (/me)
+    async function handleFetchProfile() {
+      const token = document.getElementById('jwt-token-display').value.trim();
+      if (!token) return alert('Token JWT tidak boleh kosong.');
+
+      try {
+        const res = await fetch('/api/v1/me', {
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Accept': 'application/json'
+          },
+          credentials: 'same-origin'
+        });
+        const data = await res.json();
+        displayResponse(res.status, data);
+
+        if (res.ok && data.data) {
+          renderProfileCard(data.data);
+        }
+      } catch (err) {
+        displayResponse(500, { error: err.message });
+      }
+    }
+
+    function renderProfileCard(user) {
+      document.getElementById('profile-card').classList.remove('hidden');
+      document.getElementById('prof-nama').textContent = user.user_nama;
+      document.getElementById('prof-norm').textContent = user.profile?.norm || 'RM-XXXX';
+      document.getElementById('prof-id').textContent = user.user_id;
+      document.getElementById('prof-nik').textContent = user.user_nik;
+      document.getElementById('prof-email').textContent = user.user_email || '-';
+      document.getElementById('prof-wa').textContent = user.user_nowa;
+      document.getElementById('prof-gender').textContent = user.profile?.jeniskelamin || '-';
+      document.getElementById('prof-dob').textContent = user.profile?.tgllahir || '-';
+      document.getElementById('prof-poli').textContent = user.profile?.poli || '-';
+      document.getElementById('prof-alamat').textContent = user.profile?.alamat || '-';
+    }
+
+    // 8. Logout
+    async function handleLogout() {
+      const token = document.getElementById('jwt-token-display').value.trim();
+      if (!token) {
+        currentJwtToken = '';
+        localStorage.removeItem('kliniku_jwt_token');
+        document.getElementById('jwt-token-display').value = '';
+        document.getElementById('profile-card').classList.add('hidden');
+        return alert('Sesi lokal dibersihkan.');
+      }
+
+      try {
+        const res = await fetch('/api/v1/logout', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Accept': 'application/json'
+          },
+          credentials: 'same-origin'
+        });
+        const data = await res.json();
+        displayResponse(res.status, data);
+
+        currentJwtToken = '';
+        localStorage.removeItem('kliniku_jwt_token');
+        document.getElementById('jwt-token-display').value = '';
+        document.getElementById('profile-card').classList.add('hidden');
+        alert('Logout berhasil!');
+        switchTab('tab-login');
+      } catch (err) {
+        displayResponse(500, { error: err.message });
+      }
+    }
+  </script>
+</body>
+</html>

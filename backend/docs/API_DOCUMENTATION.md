@@ -2,7 +2,7 @@
 
 Dokumentasi resmi antarmuka pemrograman aplikasi (API) untuk sistem backend **KLINIKU**. Seluruh endpoint dirancang menggunakan arsitektur RESTful JSON dan ditujukan untuk integrasi dengan antarmuka pengguna frontend (Web, Mobile, atau Kiosk).
 
-Sistem backend ini mengimplementasikan alur lengkap pendaftaran pasien baru, penerbitan Nomor Rekam Medis otomatis, login aman dengan proteksi **Google reCAPTCHA v2**, verifikasi dua langkah melalui **FlowKirim WhatsApp Tap-to-Verify (`whatsapp_tap`)**, serta penerbitan token sesi berbasis **JSON Web Token (JWT)**.
+Sistem backend ini mengimplementasikan alur lengkap pendaftaran pasien baru, penerbitan Nomor Rekam Medis otomatis, login aman dengan proteksi **Google reCAPTCHA v2**, verifikasi dua langkah melalui **Email OTP 6-Digit (SMTP Gmail / Google Workspace)**, serta penerbitan token sesi berbasis **JSON Web Token (JWT)**.
 
 ---
 
@@ -13,21 +13,21 @@ Sistem backend ini mengimplementasikan alur lengkap pendaftaran pasien baru, pen
    - [Standar HTTP Status Code](#standar-http-status-code)
    - [Arsitektur Keamanan & Autentikasi](#arsitektur-keamanan--autentikasi)
 2. [Alur Registrasi Pasien (Patient Registration Flow)](#2-alur-registrasi-pasien-patient-registration-flow)
-3. [Alur Login & Verifikasi WhatsApp (WhatsApp Tap-to-Verify Flow)](#3-alur-login--verifikasi-whatsapp-whatsapp-tap-to-verify-flow)
+3. [Alur Login & Verifikasi Email OTP (Two-Factor Authentication)](#3-alur-login--verifikasi-email-otp-two-factor-authentication)
 4. [Katalog Endpoint API](#4-katalog-endpoint-api)
    - [4.1 Autentikasi & Akun](#41-autentikasi--akun)
      - [`POST /api/v1/register` — Registrasi Pasien Baru](#411-registrasi-pasien-baru)
      - [`POST /api/v1/check-nik` — Cek Validitas & Ketersediaan NIK](#412-cek-validitas--ketersediaan-nik)
-     - [`POST /api/v1/login` — Login Pasien & Start Verifikasi WhatsApp](#413-login-pasien--start-verifikasi-whatsapp)
-     - [`POST /api/v1/verify-otp` — Verifikasi & Polling Status WhatsApp Tap](#414-verifikasi--polling-status-whatsapp-tap)
-     - [`POST /api/v1/resend-otp` — Kirim Ulang Verifikasi WhatsApp](#415-kirim-ulang-verifikasi-whatsapp)
+     - [`POST /api/v1/login` — Login Pasien & Kirim OTP ke Email](#413-login-pasien--kirim-otp-ke-email)
+     - [`POST /api/v1/verify-otp` — Verifikasi Kode OTP 6-Digit & Terbit JWT](#414-verifikasi-kode-otp-6-digit--terbit-jwt)
+     - [`POST /api/v1/resend-otp` — Kirim Ulang Kode OTP ke Email](#415-kirim-ulang-kode-otp-ke-email)
      - [`GET /api/v1/me` — Profil Pengguna & Rekam Medis (Protected)](#416-profil-pengguna--rekam-medis-protected)
      - [`POST /api/v1/logout` — Logout Pengguna (Protected)](#417-logout-pengguna-protected)
    - [4.2 Data Master & Penunjang](#42-data-master--penunjang)
      - [`GET /api/v1/polis` — Master Data Poliklinik](#421-master-data-poliklinik)
 5. [Struktur Basis Data & Model Entitas](#5-struktur-basis-data--model-entitas)
 6. [Panduan Pengujian via cURL (End-to-End Workflow)](#6-panduan-pengujian-via-curl-end-to-end-workflow)
-7. [Pengujian Otomatis (PHPUnit / Pest Test Suite)](#7-pengujian-otomatis-phpunit--pest-test-suite)
+7. [Pengujian Otomatis (PHPUnit Test Suite)](#7-pengujian-otomatis-phpunit-test-suite)
 
 ---
 
@@ -54,16 +54,15 @@ Authorization: Bearer <JWT_TOKEN>
 ### Standar HTTP Status Code
 | Kode Status | Deskripsi | Skenario Penggunaan |
 | :--- | :--- | :--- |
-| `200 OK` | Berhasil | Request sukses (login start, query profile, verified OTP). |
+| `200 OK` | Berhasil | Request sukses (login start, profil query, verify OTP sukses). |
 | `201 Created` | Berhasil Dibuat | Akun pasien baru dan Nomor Rekam Medis (RM) berhasil diterbitkan. |
-| `202 Accepted` | Diterima / Dalam Proses | Polling WhatsApp Tap masih menunggu pengiriman pesan oleh pengguna (`pending`). |
 | `401 Unauthorized` | Tidak Terotentikasi | NIK/Password salah atau token JWT tidak disertakan/tidak valid. |
 | `403 Forbidden` | Akses Ditolak | Akun berstatus non-aktif atau hak akses peran tidak mencukupi. |
-| `404 Not Found` | Tidak Ditemukan | Data pengguna atau resource tidak ditemukan. |
+| `404 Not Found` | Tidak Ditemukan | Data pengguna atau sesi tidak ditemukan. |
 | `409 Conflict` | Konflik Data | NIK sudah terdaftar saat pemeriksaan live validation. |
-| `410 Gone` | Kedaluwarsa | Sesi verifikasi WhatsApp / token OTP telah kedaluwarsa (TTL habis). |
-| `422 Unprocessable Content` | Validasi Gagal | Format input tidak valid, reCAPTCHA bot token salah, atau duplikasi field unik. |
-| `502 Bad Gateway` | Gateway Error | Server verifikasi pihak ketiga (FlowKirim) mengembalikan kegagalan pemrosesan. |
+| `410 Gone` | Kedaluwarsa | Sesi verifikasi email OTP telah kedaluwarsa (TTL 5 menit habis). |
+| `422 Unprocessable Content` | Validasi Gagal | Format input tidak valid, reCAPTCHA bot token salah, atau kode OTP salah. |
+| `500 Server Error` | Gangguan Server | Kegagalan socket/koneksi server SMTP mail. |
 
 ### Arsitektur Keamanan & Autentikasi
 1. **Google reCAPTCHA v2 ("Saya bukan robot")**:
@@ -74,16 +73,17 @@ Authorization: Bearer <JWT_TOKEN>
      - **Secret Key**: `6LfEiisuAAAAAEPuGqfaxFfGOtUGHNdZq0djWVkd`
    - *Testing Token*: Token `test-valid-token` atau `passthrough-token` dapat digunakan pada lingkungan local/testing.
 
-2. **FlowKirim WhatsApp Tap-to-Verify (`whatsapp_tap`)**:
-   - Metode verifikasi tanpa mengharuskan pengguna mengetikkan kode OTP manual secara rumit.
-   - Backend memanggil endpoint FlowKirim `/start` untuk menghasilkan deep-link WhatsApp (`wa_deeplink`).
-   - Pengguna cukup menekan tombol di antarmuka frontend, WhatsApp otomatis terbuka dengan pesan verifikasi, lalu pengguna menekan tombol "Kirim".
-   - Frontend melakukan polling ke backend (`/verify-otp`) hingga status berubah menjadi `verified`.
-   - **Handling Zero Balance / Insufficient Balance**:
-     - Jika saldo FlowKirim kosong (HTTP 402 `INSUFFICIENT_BALANCE`), backend di lingkungan `local` / `testing` secara otomatis mengaktifkan mode simulasi verifikasi (`is_simulation: true`) sehingga pengujian dan pengembangan frontend tidak terhambat. Begitu akun FlowKirim diisi saldo (top-up), pengiriman WhatsApp langsung berjalan secara live tanpa perubahan kode.
+2. **Email OTP via SMTP (Google Workspace / Gmail)**:
+   - Kode acak 6 digit angka aman (`random_int(100000, 999999)`) diterbitkan oleh backend.
+   - Dikirimkan langsung ke email pasien menggunakan protokol SMTP Google Workspace via TLS port 587.
+   - Template email HTML responsif bermerek KLINIKU (`resources/views/emails/otp.blade.php`).
+   - Kode OTP dan sesi disimpan di cache Laravel dengan TTL 300 detik (5 menit).
+   - Pengguna memasukkan kode 6 digit tersebut di frontend untuk diverifikasi pada `/api/v1/verify-otp`.
+   - **Mode Fallback Simulasi Lokal**:
+     - Jika firewall container lokal membatasi port keluar SMTP (port 587/465 timeout), backend di environment `local` / `testing` secara otomatis mengaktifkan mode simulasi (`is_simulation: true`) dan mengembalikan `preview_otp` dalam payload data agar alur testing tidak terhalang.
 
 3. **JSON Web Token (JWT)**:
-   - Diterbitkan menggunakan algoritma `HS256` setelah verifikasi WhatsApp berhasil.
+   - Diterbitkan menggunakan algoritma `HS256` setelah verifikasi OTP email berhasil.
    - Masa berlaku default: 24 jam (`JWT_TTL=86400`).
    - Payload memuat: `user_id`, `nik`, `role` (`pasien`/`dokter`/`staf`), dan `nama`.
 
@@ -95,12 +95,12 @@ Authorization: Bearer <JWT_TOKEN>
 [Mulai] Pasien membuka halaman Pendaftaran KLINIKU
    │
    ▼
-[Input Formulir] Pasien mengisi: NIK (16 digit), Nama, No. WhatsApp, Password, Alamat
+[Input Formulir] Pasien mengisi: NIK (16 digit), Nama, Email (wajib), No. WhatsApp, Password, Alamat
    │
    ▼
 [Kirim Data] POST /api/v1/register
    │
-   ├──► [Validasi Gagal / NIK Duplikat?]
+   ├──► [Validasi Gagal / NIK atau Email Duplikat?]
    │        │
    │        └──► HTTP 422: Tampilkan pesan error spesifik -> Pasien memperbaiki input
    │
@@ -117,7 +117,7 @@ Authorization: Bearer <JWT_TOKEN>
 
 ---
 
-## 3. Alur Login & Verifikasi WhatsApp (WhatsApp Tap-to-Verify Flow)
+## 3. Alur Login & Verifikasi Email OTP (Two-Factor Authentication)
 
 ```mermaid
 sequenceDiagram
@@ -125,8 +125,8 @@ sequenceDiagram
     actor Pasien as Pasien (Frontend)
     participant API as Backend KLINIKU
     participant Recaptcha as Google reCAPTCHA
-    participant FlowKirim as FlowKirim API
-    participant WA as WhatsApp App
+    participant SMTP as Google SMTP (smtp.gmail.com)
+    participant Inbox as Kotak Masuk Email Pasien
 
     Note over Pasien,API: Tahap 1: Submit Kredensial & reCAPTCHA
     Pasien->>API: POST /api/v1/login (nik, password, recaptcha_token)
@@ -140,31 +140,26 @@ sequenceDiagram
         alt Kredensial Salah
             API-->>Pasien: HTTP 401 (NIK atau kata sandi tidak sesuai)
         else Kredensial Benar
-            API->>FlowKirim: POST /start (phone, channel="whatsapp_tap")
-            FlowKirim-->>API: 200 OK (request_id, wa_deeplink, expires_in)
-            API-->>Pasien: HTTP 200 (step="otp_verification", request_id, wa_deeplink)
+            API->>API: Generate 6 Digit OTP & Simpan Sesi (TTL: 5 Menit)
+            API->>SMTP: Kirim Email Berisi Kode OTP (OtpMail template)
+            SMTP-->>Inbox: Email diterima pasien
+            API-->>Pasien: HTTP 200 (step="otp_verification", otp_session_id, masked_email)
         end
     end
 
-    Note over Pasien,WA: Tahap 2: Pasien Mengirim Pesan Verifikasi WhatsApp
-    Pasien->>WA: Buka wa_deeplink (Mobile Tap / Scan QR di Desktop)
-    WA->>FlowKirim: Pasien menekan "Kirim" pesan verifikasi dari nomor terdaftarnya
-
-    Note over Pasien,API: Tahap 3: Polling Status & Terbit JWT Token
-    loop Polling Status Verifikasi (Setiap 2-3 detik)
-        Pasien->>API: POST /api/v1/verify-otp (request_id)
-        API->>FlowKirim: GET /{request_id}
-        alt Status Masih Pending
-            FlowKirim-->>API: status: "pending"
-            API-->>Pasien: HTTP 202 Accepted (Menunggu verifikasi WhatsApp)
-        else Status Verified
-            FlowKirim-->>API: status: "verified"
-            API->>API: Terbitkan JWT Bearer Token & Ambil Profil Pasien
-            API-->>Pasien: HTTP 200 OK (JWT Token, User & Patient Dashboard Data)
-        end
+    Note over Pasien,API: Tahap 2: Input & Verifikasi Kode OTP
+    Pasien->>Inbox: Buka email & salin 6 digit kode OTP
+    Pasien->>API: POST /api/v1/verify-otp (otp_session_id, otp_code)
+    alt Kode OTP Salah
+        API-->>Pasien: HTTP 422 (Kode OTP salah)
+    else Sesi Kedaluwarsa
+        API-->>Pasien: HTTP 410 (Sesi kedaluwarsa, silakan login ulang)
+    else Kode OTP Benar
+        API->>API: Terbitkan JWT Bearer Token & Ambil Profil Pasien
+        API-->>Pasien: HTTP 200 OK (JWT Token, User & Dashboard Profile Data)
     end
 
-    Note over Pasien,API: Tahap 4: Akses Dashboard Terproteksi
+    Note over Pasien,API: Tahap 3: Akses Dashboard Terproteksi
     Pasien->>API: GET /api/v1/me (Header: Authorization: Bearer <token>)
     API-->>Pasien: HTTP 200 OK (Data Rekam Medis & Profil Lengkap)
 ```
@@ -187,6 +182,7 @@ Mendaftarkan akun pasien baru, menerbitkan ID Pengguna (`user_id`), dan mencetak
 | :--- | :--- | :--- | :--- |
 | `nik` | String | **Wajib** | 16 digit angka (`regex:/^[0-9]{16}$/`), unik dalam tabel `user`. |
 | `nama` | String | **Wajib** | Nama lengkap pasien (2 - 150 karakter). |
+| `email` | String | **Wajib** | Alamat email aktif untuk menerima kode OTP (format email valid, unik di `user_email`). |
 | `nowa` | String | **Wajib** | Nomor WhatsApp aktif (10 - 15 digit angka, awalan `08`, `62`, atau `+62`). |
 | `password` | String | **Wajib** | Kata sandi akun (minimal 6 karakter). |
 | `password_confirmation` | String | Opsional | Jika dikirim, nilainya harus sama dengan `password`. |
@@ -203,6 +199,7 @@ Mendaftarkan akun pasien baru, menerbitkan ID Pengguna (`user_id`), dan mencetak
 {
   "nik": "3372010101950001",
   "nama": "Budi Hartono",
+  "email": "budi.hartono@example.com",
   "nowa": "081234567890",
   "password": "Password123!",
   "alamat": "Jl. Melati No. 45, Jebres, Surakarta",
@@ -221,6 +218,7 @@ Mendaftarkan akun pasien baru, menerbitkan ID Pengguna (`user_id`), dan mencetak
     "user_role": "pasien",
     "user_nama": "Budi Hartono",
     "user_nik": "3372010101950001",
+    "user_email": "budi.hartono@example.com",
     "user_nowa": "081234567890",
     "pasien_norm": "RM-2026-0101",
     "pasien_jeniskelamin": "Laki-laki",
@@ -236,17 +234,6 @@ Mendaftarkan akun pasien baru, menerbitkan ID Pengguna (`user_id`), dan mencetak
     "step": 4,
     "action": "login",
     "endpoint": "/api/v1/login"
-  }
-}
-```
-
-##### Contoh Response Validasi Gagal (`422 Unprocessable Content`)
-```json
-{
-  "success": false,
-  "message": "Validasi format atau duplikasi data gagal. Silakan periksa kembali formulir pendaftaran.",
-  "errors": {
-    "nik": ["NIK sudah terdaftar dalam sistem KLINIKU. Silakan periksa kembali atau gunakan opsi Login."]
   }
 }
 ```
@@ -290,8 +277,8 @@ Endpoint live-validation untuk form registrasi sebelum submit penuh. Mendeteksi 
 
 ---
 
-#### 4.1.3 Login Pasien & Start Verifikasi WhatsApp
-Memverifikasi NIK, kata sandi, dan token Google reCAPTCHA v2. Jika valid, sistem memanggil layanan FlowKirim dengan channel `whatsapp_tap` dan mengembalikan tautan deep-link WhatsApp (`wa_deeplink`) serta `request_id`.
+#### 4.1.3 Login Pasien & Kirim OTP ke Email
+Memverifikasi NIK, kata sandi, dan token Google reCAPTCHA v2. Jika valid, sistem menghasilkan 6 digit kode OTP dan mengirimkannya ke email terdaftar pasien via SMTP Gmail.
 
 - **URL**: `/api/v1/login` *(Alias: `/api/v1/auth/login`, `/api/login`)*
 - **Method**: `POST`
@@ -313,27 +300,22 @@ Memverifikasi NIK, kata sandi, dan token Google reCAPTCHA v2. Jika valid, sistem
 }
 ```
 
-##### Contoh Response Sukses (`200 OK` — Menunggu Verifikasi WhatsApp)
+##### Contoh Response Sukses (`200 OK` — Menunggu Verifikasi OTP)
 ```json
 {
   "success": true,
-  "message": "Kredensial dan reCAPTCHA valid. Silakan selesaikan verifikasi via WhatsApp untuk masuk.",
+  "message": "Kredensial dan reCAPTCHA valid. Kode OTP 6 digit telah dikirimkan ke email l***i@student.uns.ac.id.",
   "step": "otp_verification",
   "data": {
-    "request_id": "7b1c4a9e-11df-4b2a-8f90-8c290192e2a1",
-    "channel": "whatsapp_tap",
-    "masked_phone": "*********6669",
-    "wa_deeplink": "https://wa.me/6285113736221?text=VERIFY-AB12CD34EF",
-    "wa_number": "6285113736221",
+    "otp_session_id": "a6b4c1d2-7e8f-49a0-bc12-34567890abcd",
+    "request_id": "a6b4c1d2-7e8f-49a0-bc12-34567890abcd",
+    "channel": "email",
+    "masked_email": "l***i@student.uns.ac.id",
     "expires_in": 300,
-    "action_guide": "Buka tautan wa_deeplink di WhatsApp lalu tekan Kirim. Kemudian periksa status dengan memanggil endpoint /api/v1/verify-otp."
+    "action_guide": "Buka kotak masuk atau folder spam email l***i@student.uns.ac.id, salin 6 digit kode OTP, lalu verifikasi pada endpoint /api/v1/verify-otp."
   }
 }
 ```
-
-> **Catatan Alur Frontend**:
-> - Di perangkat smartphone: Frontend dapat menyediakan tombol "Verifikasi via WhatsApp" yang langsung membuka `wa_deeplink`.
-> - Di desktop / PC: Frontend dapat merender nilai `wa_deeplink` menjadi QR Code agar dapat di-scan menggunakan aplikasi kamera / WhatsApp di HP pengguna.
 
 ##### Contoh Response Kredensial Salah (`401 Unauthorized`)
 ```json
@@ -347,7 +329,7 @@ Memverifikasi NIK, kata sandi, dan token Google reCAPTCHA v2. Jika valid, sistem
 ```json
 {
   "success": false,
-  "message": "Verifikasi reCAPTCHA gagal. Pastikan Anda telah mencentang widget \"Saya bukan robot\" dengan benar.",
+  "message": "Verifikasi bot reCAPTCHA tidak valid atau telah kedaluwarsa.",
   "errors": {
     "recaptcha_token": [
       "Verifikasi bot reCAPTCHA tidak valid atau telah kedaluwarsa."
@@ -358,42 +340,32 @@ Memverifikasi NIK, kata sandi, dan token Google reCAPTCHA v2. Jika valid, sistem
 
 ---
 
-#### 4.1.4 Verifikasi & Polling Status WhatsApp Tap
-Digunakan oleh frontend untuk memvalidasi apakah pengguna sudah menekan tombol "Kirim" di WhatsApp melalui `wa_deeplink`. Endpoint ini juga mendukung verifikasi manual jika parameter `code` disertakan.
+#### 4.1.4 Verifikasi Kode OTP 6-Digit & Terbit JWT
+Memverifikasi 6 digit kode OTP yang diterima melalui email. Jika valid, sistem langsung menerbitkan JWT Bearer Token dan data profil lengkap pengguna.
 
 - **URL**: `/api/v1/verify-otp` *(Alias: `/api/v1/auth/verify-otp`, `/api/verify-otp`)*
 - **Method**: `POST`
-- **Autentikasi**: Tidak diperlukan (Publik — diverifikasi via `request_id`)
+- **Autentikasi**: Tidak diperlukan (Publik — diverifikasi via `otp_session_id` dan `otp_code`)
 
 ##### Parameter Request Body
 | Field | Tipe Data | Status | Keterangan |
 | :--- | :--- | :--- | :--- |
-| `request_id` | String | **Wajib** | Nilai `request_id` yang diterima dari respons endpoint login. |
-| `code` | String | Opsional | Kode verifikasi manual 4–8 digit (hanya digunakan jika bukan metode tap). |
+| `otp_session_id` | String | **Wajib** | ID sesi OTP yang diperoleh dari respons endpoint login (alias: `request_id`). |
+| `otp_code` | String | **Wajib** | 6 digit kode OTP yang diterima dari email (alias: `code`). |
 
 ##### Contoh Request
 ```json
 {
-  "request_id": "7b1c4a9e-11df-4b2a-8f90-8c290192e2a1"
-}
-```
-
-##### Contoh Response Status Pending (`202 Accepted`)
-Dikembalikan saat pengguna belum mengirim pesan WhatsApp:
-```json
-{
-  "success": false,
-  "status": "pending",
-  "message": "Menunggu verifikasi WhatsApp. Silakan buka tautan wa_deeplink dan kirim pesan verifikasi."
+  "otp_session_id": "a6b4c1d2-7e8f-49a0-bc12-34567890abcd",
+  "otp_code": "847291"
 }
 ```
 
 ##### Contoh Response Berhasil Terverifikasi (`200 OK` — Terbit JWT)
-Dikembalikan saat pesan WhatsApp telah diterima FlowKirim:
 ```json
 {
   "success": true,
-  "message": "Verifikasi WhatsApp berhasil! Selamat datang di Portal KLINIKU.",
+  "message": "Verifikasi OTP email berhasil! Selamat datang di Portal KLINIKU.",
   "data": {
     "status": "verified",
     "user": {
@@ -402,7 +374,7 @@ Dikembalikan saat pesan WhatsApp telah diterima FlowKirim:
       "user_nama": "Yusuf Hidayat",
       "user_nik": "3372020912254658",
       "user_nowa": "081323756669",
-      "user_email": null,
+      "user_email": "lintarkertapati@student.uns.ac.id",
       "user_status": "aktif",
       "profile": {
         "norm": "RM-2026-0001",
@@ -424,19 +396,28 @@ Dikembalikan saat pesan WhatsApp telah diterima FlowKirim:
 }
 ```
 
+##### Contoh Response Kode OTP Salah (`422 Unprocessable Content`)
+```json
+{
+  "success": false,
+  "status": "invalid_code",
+  "message": "Kode OTP yang Anda masukkan salah. Silakan periksa kembali email Anda."
+}
+```
+
 ##### Contoh Response Sesi Kedaluwarsa (`410 Gone`)
 ```json
 {
   "success": false,
   "status": "expired",
-  "message": "Sesi verifikasi tidak ditemukan atau telah kedaluwarsa. Silakan lakukan login ulang."
+  "message": "Sesi verifikasi OTP tidak ditemukan atau telah kedaluwarsa. Silakan lakukan login ulang."
 }
 ```
 
 ---
 
-#### 4.1.5 Kirim Ulang Verifikasi WhatsApp
-Memperbarui sesi verifikasi dan menghasilkan deep-link WhatsApp baru apabila batas waktu (`ttl`) sesi sebelumnya hampir habis atau kedaluwarsa.
+#### 4.1.5 Kirim Ulang Kode OTP ke Email
+Mengirimkan ulang kode OTP 6 digit baru ke alamat email pasien jika kode sebelumnya belum diterima atau masa berlakunya telah habis.
 
 - **URL**: `/api/v1/resend-otp` *(Alias: `/api/v1/auth/resend-otp`, `/api/resend-otp`)*
 - **Method**: `POST`
@@ -445,12 +426,12 @@ Memperbarui sesi verifikasi dan menghasilkan deep-link WhatsApp baru apabila bat
 ##### Parameter Request Body
 | Field | Tipe Data | Status | Keterangan |
 | :--- | :--- | :--- | :--- |
-| `request_id` | String | **Wajib** | `request_id` dari sesi login sebelumnya. |
+| `otp_session_id` | String | **Wajib** | `otp_session_id` (atau `request_id`) dari sesi sebelumnya. |
 
 ##### Contoh Request
 ```json
 {
-  "request_id": "7b1c4a9e-11df-4b2a-8f90-8c290192e2a1"
+  "otp_session_id": "a6b4c1d2-7e8f-49a0-bc12-34567890abcd"
 }
 ```
 
@@ -458,12 +439,12 @@ Memperbarui sesi verifikasi dan menghasilkan deep-link WhatsApp baru apabila bat
 ```json
 {
   "success": true,
-  "message": "Permintaan verifikasi WhatsApp baru berhasil dibuat.",
+  "message": "Kode OTP baru berhasil dikirimkan ke email l***i@student.uns.ac.id.",
   "data": {
-    "request_id": "8c2d5b0f-22ea-4c3b-9g01-9d300203f3b2",
-    "channel": "whatsapp_tap",
-    "masked_phone": "*********6669",
-    "wa_deeplink": "https://wa.me/6285113736221?text=VERIFY-CD34EF56GH",
+    "otp_session_id": "f8e7d6c5-4b3a-2109-8765-fedcba098765",
+    "request_id": "f8e7d6c5-4b3a-2109-8765-fedcba098765",
+    "channel": "email",
+    "masked_email": "l***i@student.uns.ac.id",
     "expires_in": 300
   }
 }
@@ -494,7 +475,7 @@ Accept: application/json
     "user_nama": "Yusuf Hidayat",
     "user_nik": "3372020912254658",
     "user_nowa": "081323756669",
-    "user_email": null,
+    "user_email": "lintarkertapati@student.uns.ac.id",
     "user_status": "aktif",
     "profile": {
       "norm": "RM-2026-0001",
@@ -507,14 +488,6 @@ Accept: application/json
       "poli": "Poli KIA / Anak"
     }
   }
-}
-```
-
-##### Contoh Response Token Tidak Disertakan / Tidak Valid (`401 Unauthorized`)
-```json
-{
-  "success": false,
-  "message": "Token autentikasi tidak ditemukan. Harap sertakan Authorization: Bearer <token> pada header."
 }
 ```
 
@@ -546,40 +519,6 @@ Mengambil daftar poliklinik aktif untuk opsi pilihan poli rujukan/tujuan pada dr
 - **Method**: `GET`
 - **Autentikasi**: Tidak diperlukan (Publik)
 
-##### Contoh Response Sukses (`200 OK`)
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "poli_id": 1,
-      "poli_nama": "Poli Umum",
-      "poli_keterangan": null
-    },
-    {
-      "poli_id": 2,
-      "poli_nama": "Poli Umum & Geriatri (Lansia)",
-      "poli_keterangan": null
-    },
-    {
-      "poli_id": 3,
-      "poli_nama": "Poli KIA / Anak",
-      "poli_keterangan": null
-    },
-    {
-      "poli_id": 4,
-      "poli_nama": "Poli Gigi & Mulut",
-      "poli_keterangan": null
-    },
-    {
-      "poli_id": 5,
-      "poli_nama": "Poli Kandungan & Kebidanan",
-      "poli_keterangan": null
-    }
-  ]
-}
-```
-
 ---
 
 ## 5. Struktur Basis Data & Model Entitas
@@ -594,7 +533,7 @@ Data autentikasi dan rekam medis dikelola dengan integritas referensial ketat pa
 | `user_nama` | `VARCHAR(150)` | NOT NULL | Nama lengkap pengguna. |
 | `user_nik` | `CHAR(16)` | **UNIQUE**, NOT NULL | 16 digit NIK KTP. |
 | `user_nowa` | `VARCHAR(20)` | NOT NULL | Nomor WhatsApp aktif. |
-| `user_email` | `VARCHAR(100)` | NULL | Alamat email (hanya untuk dokter/staf). |
+| `user_email` | `VARCHAR(100)` | NOT NULL, **UNIQUE** | Alamat email aktif untuk menerima OTP. |
 | `user_password` | `VARCHAR(255)` | NOT NULL | Hash kata sandi terenkripsi Bcrypt. |
 | `user_status` | `ENUM('aktif','nonaktif')` | DEFAULT `'aktif'` | Status keaktifan akun. |
 | `user_createdat` | `DATETIME` | NOT NULL | Waktu pembuatan akun. |
@@ -634,6 +573,7 @@ curl -s -X POST http://localhost:8080/api/v1/register \
   -d '{
     "nik": "3372010101950001",
     "nama": "Budi Hartono",
+    "email": "budi.hartono@example.com",
     "nowa": "081234567890",
     "password": "Password123!",
     "alamat": "Jl. Melati No. 45, Jebres, Surakarta",
@@ -642,7 +582,7 @@ curl -s -X POST http://localhost:8080/api/v1/register \
   }'
 ```
 
-### 3. Login Pasien (Mendapatkan Sesi WhatsApp Tap)
+### 3. Login Pasien (Kirim OTP ke Email)
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/login \
   -H "Content-Type: application/json" \
@@ -652,14 +592,15 @@ curl -s -X POST http://localhost:8080/api/v1/login \
     "recaptcha_token": "test-valid-token"
   }'
 ```
-*Salin nilai `data.request_id` dari respon di atas.*
+*Salin nilai `data.otp_session_id` dari respon di atas.*
 
-### 4. Verifikasi WhatsApp Tap (Mendapatkan JWT Bearer Token)
+### 4. Verifikasi Kode OTP Email (Mendapatkan JWT Bearer Token)
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/verify-otp \
   -H "Content-Type: application/json" \
   -d '{
-    "request_id": "<MASUKKAN_REQUEST_ID_DARI_STEP_3>"
+    "otp_session_id": "<MASUKKAN_OTP_SESSION_ID_DARI_STEP_3>",
+    "otp_code": "847291"
   }'
 ```
 *Salin nilai `data.authorization.token` dari respon di atas.*
@@ -678,9 +619,9 @@ curl -s -X POST http://localhost:8080/api/v1/logout \
 
 ---
 
-## 7. Pengujian Otomatis (PHPUnit / Pest Test Suite)
+## 7. Pengujian Otomatis (PHPUnit Test Suite)
 
-Untuk menjalankan seluruh test suite otomatis yang mencakup validasi input, kegagalan kredensial, proteksi bot reCAPTCHA, inisiasi FlowKirim WhatsApp Tap, penerbitan JWT, serta otorisasi rute:
+Untuk menjalankan seluruh test suite otomatis:
 
 ```bash
 docker compose exec app php artisan test
@@ -688,9 +629,9 @@ docker compose exec app php artisan test
 
 Untuk menjalankan kelompok test secara terpisah:
 ```bash
-# Pengujian autentikasi, login, FlowKirim WhatsApp, & JWT
+# Pengujian autentikasi, login, Email OTP SMTP, & JWT
 docker compose exec app php artisan test --filter AuthLoginTest
 
-# Pengujian pendaftaran pasien, auto-decode NIK, & pembuatan nomor RM
+# Pengujian pendaftaran pasien, auto-decode NIK, validasi email & nomor RM
 docker compose exec app php artisan test --filter PatientRegistrationTest
 ```
