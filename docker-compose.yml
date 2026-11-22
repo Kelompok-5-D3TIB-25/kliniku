@@ -6,7 +6,7 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - ./src:/var/www/html
+      - ./backend:/var/www/html
     environment:
       TZ: Asia/Jakarta
       APP_URL: http://localhost:8080
