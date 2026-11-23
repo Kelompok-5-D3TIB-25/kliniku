@@ -62,27 +62,46 @@ Authorization: Bearer <JWT_TOKEN>
 | `409 Conflict` | Konflik Data | NIK sudah terdaftar saat pemeriksaan live validation. |
 | `410 Gone` | Kedaluwarsa | Sesi verifikasi email OTP telah kedaluwarsa (TTL 5 menit habis). |
 | `422 Unprocessable Content` | Validasi Gagal | Format input tidak valid, reCAPTCHA bot token salah, atau kode OTP salah. |
+| `429 Too Many Requests` | Rate Limit Terlampaui | Terlalu banyak percobaan login/request dalam periode 1 menit (terproteksi Throttling). |
 | `500 Server Error` | Gangguan Server | Kegagalan socket/koneksi server SMTP mail. |
 
-### Arsitektur Keamanan & Autentikasi
-1. **Google reCAPTCHA v2 ("Saya bukan robot")**:
-   - Widget frontend memverifikasi bahwa pengisi form login adalah manusia.
+### Arsitektur Keamanan & Proteksi Siber
+Sistem KLINIKU mengimplementasikan 5 pilar keamanan standar industri:
+
+1. **Password Security (Keamanan Kata Sandi)**:
+   - Seluruh kata sandi pengguna di-hash menggunakan algoritma **Bcrypt** (`PASSWORD_BCRYPT` dengan cost/rounds 12).
+   - Kata sandi **TIDAK PERNAH disimpan atau ditransmisikan dalam bentuk plaintext**.
+   - Model `User` menyembunyikan atribut `user_password` (`$hidden = ['user_password']`) sehingga tidak pernah bocor ke respons JSON atau serialisasi array.
+   - Pengecekan kata sandi pada saat login dilakukan menggunakan `Hash::check()` yang aman terhadap serangan *timing attack*.
+
+2. **Google reCAPTCHA v2 (Proteksi Bot & Brute Force)**:
+   - Diterapkan pada endpoint login (`/api/v1/login`) untuk mencegah serangan credential stuffing dan bot otomatis.
    - Token verifikasi dikirimkan ke backend melalui field `recaptcha_token` dan divalidasi ke Google Siteverify API.
    - Kredensial aktif:
      - **Site Key**: `6LfEiisuAAAAAM1dgo05Kv4IqPwYUF5NTWbDUN9V`
      - **Secret Key**: `6LfEiisuAAAAAEPuGqfaxFfGOtUGHNdZq0djWVkd`
-   - *Testing Token*: Token `test-valid-token` atau `passthrough-token` dapat digunakan pada lingkungan local/testing.
+   - Token uji coba lingkungan lokal: `test-valid-token`. Input token yang salah/kedaluwarsa akan menghasilkan error `422 Unprocessable Content`.
 
-2. **Email OTP via SMTP (Google Workspace / Gmail)**:
-   - Kode acak 6 digit angka aman (`random_int(100000, 999999)`) diterbitkan oleh backend.
-   - Dikirimkan langsung ke email pasien menggunakan protokol SMTP Google Workspace via TLS port 587.
-   - Template email HTML responsif bermerek KLINIKU (`resources/views/emails/otp.blade.php`).
-   - Kode OTP dan sesi disimpan di cache Laravel dengan TTL 300 detik (5 menit).
-   - Pengguna memasukkan kode 6 digit tersebut di frontend untuk diverifikasi pada `/api/v1/verify-otp`.
-   - **Mode Fallback Simulasi Lokal**:
-     - Jika firewall container lokal membatasi port keluar SMTP (port 587/465 timeout), backend di environment `local` / `testing` secara otomatis mengaktifkan mode simulasi (`is_simulation: true`) dan mengembalikan `preview_otp` dalam payload data agar alur testing tidak terhalang.
+3. **One-Time Password (OTP) 2-Factor Authentication**:
+   - Kode OTP 6 digit acak aman (`random_int(100000, 999999)`) dikirimkan via SMTP Google Workspace (`smtp.gmail.com:587 TLS`).
+   - **Batas Waktu (Time-Bound)**: Sesi OTP disimpan pada cache dengan masa berlaku (TTL) **300 detik (5 menit)**. Melebihi waktu ini, sistem mengembalikan `410 Gone`.
+   - **Sekali Pakai (Single-Use Guarantee)**: Sesi OTP langsung dihapus dari cache (`Cache::forget`) segera setelah verifikasi pertama berhasil. Kode tidak dapat digunakan ulang (mencegah *replay attack*).
+   - **Brute-Force Lockout**: Jika kode salah dimasukkan sebanyak **5 kali**, sesi OTP langsung dimusnahkan (`status: 'locked'`) dan pengguna diwajibkan login ulang.
 
-3. **JSON Web Token (JWT)**:
+4. **SQL Injection Prevention (Pencegahan SQLi)**:
+   - Seluruh operasi basis data menggunakan Laravel Eloquent ORM dan PDO Query Builder dengan **Prepared Statements / Parameterized Queries**.
+   - Input pengguna selalu diperlakukan sebagai nilai parameter harfiah (literal value binding), bukan bagian dari sintaks query SQL yang dapat dieksekusi.
+   - Telah diuji secara ketat terhadap payload SQL injection klasik dan modern (`' OR '1'='1`, `'; DROP TABLE user; --`, `' UNION SELECT ... --`) pada field `nik`, `password`, `check-nik`, dan data registrasi.
+
+5. **Rate Limiting (Throttling Permintaan)**:
+   - Pembatasan jumlah request diterapkan pada seluruh rute API untuk mencegah Denial of Service (DoS) dan serangan brute-force:
+     - **Login (`throttle:login`)**: Maksimum **5 percobaan per menit** per NIK + IP. Percobaan ke-6 mengembalikan status `HTTP 429 Too Many Requests`.
+     - **Verifikasi OTP (`throttle:otp`)**: Maksimum **5 percobaan per menit** per IP.
+     - **Kirim Ulang OTP (`throttle:otp_resend`)**: Maksimum **3 permintaan per menit** per IP.
+     - **Global API (`throttle:api`)**: Maksimum **60 request per menit** per IP/User.
+   - Header respons menyertakan `X-RateLimit-Limit`, `X-RateLimit-Remaining`, dan `Retry-After`.
+
+6. **JSON Web Token (JWT)**:
    - Diterbitkan menggunakan algoritma `HS256` setelah verifikasi OTP email berhasil.
    - Masa berlaku default: 24 jam (`JWT_TTL=86400`).
    - Payload memuat: `user_id`, `nik`, `role` (`pasien`/`dokter`/`staf`), dan `nama`.
@@ -634,4 +653,7 @@ docker compose exec app php artisan test --filter AuthLoginTest
 
 # Pengujian pendaftaran pasien, auto-decode NIK, validasi email & nomor RM
 docker compose exec app php artisan test --filter PatientRegistrationTest
+
+# Pengujian 5 Pilar Keamanan (Bcrypt, reCAPTCHA, Single-Use OTP, SQLi, Rate Limiting)
+docker compose exec app php artisan test --filter SecurityFeaturesTest
 ```

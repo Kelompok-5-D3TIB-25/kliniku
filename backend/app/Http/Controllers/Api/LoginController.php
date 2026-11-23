@@ -188,10 +188,26 @@ class LoginController extends Controller
 
         // Validate OTP code
         if ($inputCode !== (string) $session['otp_code']) {
+            $failedAttempts = ($session['failed_attempts'] ?? 0) + 1;
+            if ($failedAttempts >= 5) {
+                Cache::forget('email_otp_session_' . $sessionId);
+                return response()->json([
+                    'success' => false,
+                    'status' => 'locked',
+                    'message' => 'Terlalu banyak percobaan kode OTP yang salah. Sesi telah dibatalkan demi keamanan. Silakan login ulang.',
+                ], 422);
+            }
+
+            $session['failed_attempts'] = $failedAttempts;
+            $remainingSeconds = max(1, ($session['expires_at'] ?? now()->timestamp) - now()->timestamp);
+            Cache::put('email_otp_session_' . $sessionId, $session, $remainingSeconds);
+
+            $attemptsLeft = 5 - $failedAttempts;
             return response()->json([
                 'success' => false,
                 'status' => 'invalid_code',
-                'message' => 'Kode OTP yang Anda masukkan salah. Silakan periksa kembali email Anda.',
+                'message' => "Kode OTP yang Anda masukkan salah. Sisa kesempatan: {$attemptsLeft} kali.",
+                'attempts_left' => $attemptsLeft,
             ], 422);
         }
 
