@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\LoginController;
+use App\Http\Controllers\Api\LoketController;
 use App\Http\Controllers\Api\QueueTrackerController;
 use App\Http\Controllers\Api\RegisterController;
 use Illuminate\Support\Facades\Route;
@@ -61,6 +62,17 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('/booking/{id}/batal', [BookingController::class, 'cancel']);
             Route::get('/antrean/saya', [QueueTrackerController::class, 'antreanSaya']);
         });
+
+        // Admin Loket / Staf operations (US-04 & US-08)
+        Route::middleware('role:staf')->group(function () {
+            Route::post('/loket/checkin-qr', [LoketController::class, 'checkInQr']);
+            Route::post('/loket/pendaftaran-walkin', [LoketController::class, 'pendaftaranWalkin']);
+            Route::get('/loket/antrean-hari-ini', [LoketController::class, 'antreanHariIni']);
+            Route::post('/loket/antrean/{id}/panggil', [LoketController::class, 'panggil']);
+            Route::post('/loket/antrean/{id}/panggil-ulang', [LoketController::class, 'panggilUlang']);
+            Route::post('/loket/antrean/{id}/lewati', [LoketController::class, 'lewati']);
+            Route::post('/loket/antrean/{id}/layani', [LoketController::class, 'layani']);
+        });
     });
 });
 
@@ -105,6 +117,16 @@ Route::middleware('throttle:api')->group(function () {
             Route::post('/booking', [BookingController::class, 'store']);
             Route::post('/booking/{id}/batal', [BookingController::class, 'cancel']);
             Route::get('/antrean/saya', [QueueTrackerController::class, 'antreanSaya']);
+        });
+
+        Route::middleware('role:staf')->group(function () {
+            Route::post('/loket/checkin-qr', [LoketController::class, 'checkInQr']);
+            Route::post('/loket/pendaftaran-walkin', [LoketController::class, 'pendaftaranWalkin']);
+            Route::get('/loket/antrean-hari-ini', [LoketController::class, 'antreanHariIni']);
+            Route::post('/loket/antrean/{id}/panggil', [LoketController::class, 'panggil']);
+            Route::post('/loket/antrean/{id}/panggil-ulang', [LoketController::class, 'panggilUlang']);
+            Route::post('/loket/antrean/{id}/lewati', [LoketController::class, 'lewati']);
+            Route::post('/loket/antrean/{id}/layani', [LoketController::class, 'layani']);
         });
     });
 });
