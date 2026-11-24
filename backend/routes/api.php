@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\LoginController;
 use App\Http\Controllers\Api\RegisterController;
 use Illuminate\Support\Facades\Route;
@@ -34,12 +35,25 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::post('/auth/resend-otp', [LoginController::class, 'resendOtp']);
     });
 
+    // Booking & Quota Engine (US-03)
+    Route::get('/booking/dokter', [BookingController::class, 'getDokterList']);
+    Route::post('/booking/cek-kuota', [BookingController::class, 'cekKuota']);
+
     // Protected Endpoints (Requires Bearer JWT token)
     Route::middleware('jwt.auth')->group(function () {
         Route::get('/me', [LoginController::class, 'me']);
         Route::get('/auth/me', [LoginController::class, 'me']);
         Route::post('/logout', [LoginController::class, 'logout']);
         Route::post('/auth/logout', [LoginController::class, 'logout']);
+
+        // Booking e-Tiket details (Any authenticated role with authorization check)
+        Route::get('/booking/{id}/tiket', [BookingController::class, 'getTiket']);
+
+        // Patient-only Booking operations
+        Route::middleware('role:pasien')->group(function () {
+            Route::post('/booking', [BookingController::class, 'store']);
+            Route::post('/booking/{id}/batal', [BookingController::class, 'cancel']);
+        });
     });
 });
 
@@ -49,6 +63,9 @@ Route::middleware('throttle:api')->group(function () {
     Route::post('/auth/register', [RegisterController::class, 'register']);
     Route::match(['get', 'post'], '/check-nik', [RegisterController::class, 'checkNik']);
     Route::get('/polis', [RegisterController::class, 'getPoliList']);
+
+    Route::get('/booking/dokter', [BookingController::class, 'getDokterList']);
+    Route::post('/booking/cek-kuota', [BookingController::class, 'cekKuota']);
 
     Route::middleware('throttle:login')->group(function () {
         Route::post('/login', [LoginController::class, 'login']);
@@ -70,5 +87,12 @@ Route::middleware('throttle:api')->group(function () {
         Route::get('/auth/me', [LoginController::class, 'me']);
         Route::post('/logout', [LoginController::class, 'logout']);
         Route::post('/auth/logout', [LoginController::class, 'logout']);
+
+        Route::get('/booking/{id}/tiket', [BookingController::class, 'getTiket']);
+
+        Route::middleware('role:pasien')->group(function () {
+            Route::post('/booking', [BookingController::class, 'store']);
+            Route::post('/booking/{id}/batal', [BookingController::class, 'cancel']);
+        });
     });
 });
