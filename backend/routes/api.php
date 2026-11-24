@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\AdminJadwalController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\DokterPoliController;
+use App\Http\Controllers\Api\LaporanController;
 use App\Http\Controllers\Api\LoginController;
 use App\Http\Controllers\Api\LoketController;
 use App\Http\Controllers\Api\PatientMedicalRecordController;
@@ -74,7 +76,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('/dokter/rekam-medis', [DokterPoliController::class, 'simpanPemeriksaan']);
         });
 
-        // Admin Loket / Staf operations (US-04 & US-08)
+        // Admin Loket / Staf operations (US-04, US-06, US-08, US-09)
         Route::middleware('role:staf')->group(function () {
             Route::post('/loket/checkin-qr', [LoketController::class, 'checkInQr']);
             Route::post('/loket/pendaftaran-walkin', [LoketController::class, 'pendaftaranWalkin']);
@@ -83,6 +85,16 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('/loket/antrean/{id}/panggil-ulang', [LoketController::class, 'panggilUlang']);
             Route::post('/loket/antrean/{id}/lewati', [LoketController::class, 'lewati']);
             Route::post('/loket/antrean/{id}/layani', [LoketController::class, 'layani']);
+
+            // Doctor Schedule & Quota Management (US-06)
+            Route::get('/admin/jadwal', [AdminJadwalController::class, 'index']);
+            Route::post('/admin/jadwal', [AdminJadwalController::class, 'store']);
+            Route::put('/admin/jadwal/{id}', [AdminJadwalController::class, 'update']);
+            Route::delete('/admin/jadwal/{id}', [AdminJadwalController::class, 'destroy']);
+
+            // Visit Reporting & CSV Export (US-09)
+            Route::get('/admin/laporan-kunjungan', [LaporanController::class, 'laporanKunjungan']);
+            Route::get('/admin/laporan-kunjungan/export', [LaporanController::class, 'exportCsv']);
         });
     });
 });
@@ -146,6 +158,14 @@ Route::middleware('throttle:api')->group(function () {
             Route::post('/loket/antrean/{id}/panggil-ulang', [LoketController::class, 'panggilUlang']);
             Route::post('/loket/antrean/{id}/lewati', [LoketController::class, 'lewati']);
             Route::post('/loket/antrean/{id}/layani', [LoketController::class, 'layani']);
+
+            Route::get('/admin/jadwal', [AdminJadwalController::class, 'index']);
+            Route::post('/admin/jadwal', [AdminJadwalController::class, 'store']);
+            Route::put('/admin/jadwal/{id}', [AdminJadwalController::class, 'update']);
+            Route::delete('/admin/jadwal/{id}', [AdminJadwalController::class, 'destroy']);
+
+            Route::get('/admin/laporan-kunjungan', [LaporanController::class, 'laporanKunjungan']);
+            Route::get('/admin/laporan-kunjungan/export', [LaporanController::class, 'exportCsv']);
         });
     });
 });
