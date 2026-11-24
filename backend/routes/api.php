@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\LoginController;
+use App\Http\Controllers\Api\QueueTrackerController;
 use App\Http\Controllers\Api\RegisterController;
 use Illuminate\Support\Facades\Route;
 
@@ -39,6 +40,11 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
     Route::get('/booking/dokter', [BookingController::class, 'getDokterList']);
     Route::post('/booking/cek-kuota', [BookingController::class, 'cekKuota']);
 
+    // Live Queue Tracker & TV Display (US-02)
+    Route::get('/display/tv', [QueueTrackerController::class, 'tvDisplay']);
+    Route::get('/antrean/live/{id}', [QueueTrackerController::class, 'liveTracking']);
+    Route::get('/antrean/poli/{poli_id}/hari-ini', [QueueTrackerController::class, 'poliHariIni']);
+
     // Protected Endpoints (Requires Bearer JWT token)
     Route::middleware('jwt.auth')->group(function () {
         Route::get('/me', [LoginController::class, 'me']);
@@ -49,10 +55,11 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         // Booking e-Tiket details (Any authenticated role with authorization check)
         Route::get('/booking/{id}/tiket', [BookingController::class, 'getTiket']);
 
-        // Patient-only Booking operations
+        // Patient-only operations
         Route::middleware('role:pasien')->group(function () {
             Route::post('/booking', [BookingController::class, 'store']);
             Route::post('/booking/{id}/batal', [BookingController::class, 'cancel']);
+            Route::get('/antrean/saya', [QueueTrackerController::class, 'antreanSaya']);
         });
     });
 });
@@ -66,6 +73,10 @@ Route::middleware('throttle:api')->group(function () {
 
     Route::get('/booking/dokter', [BookingController::class, 'getDokterList']);
     Route::post('/booking/cek-kuota', [BookingController::class, 'cekKuota']);
+
+    Route::get('/display/tv', [QueueTrackerController::class, 'tvDisplay']);
+    Route::get('/antrean/live/{id}', [QueueTrackerController::class, 'liveTracking']);
+    Route::get('/antrean/poli/{poli_id}/hari-ini', [QueueTrackerController::class, 'poliHariIni']);
 
     Route::middleware('throttle:login')->group(function () {
         Route::post('/login', [LoginController::class, 'login']);
@@ -93,6 +104,7 @@ Route::middleware('throttle:api')->group(function () {
         Route::middleware('role:pasien')->group(function () {
             Route::post('/booking', [BookingController::class, 'store']);
             Route::post('/booking/{id}/batal', [BookingController::class, 'cancel']);
+            Route::get('/antrean/saya', [QueueTrackerController::class, 'antreanSaya']);
         });
     });
 });
