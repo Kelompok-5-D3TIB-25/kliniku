@@ -1,8 +1,8 @@
-# Dokumentasi Lengkap API KLINIKU (Backend)
+# Dokumentasi Lengkap API KLINIKU (Backend REST API)
 
-Dokumentasi resmi antarmuka pemrograman aplikasi (API) untuk sistem backend **KLINIKU**. Seluruh endpoint dirancang menggunakan arsitektur RESTful JSON dan ditujukan untuk integrasi dengan antarmuka pengguna frontend (Web, Mobile, atau Kiosk).
+Dokumentasi resmi antarmuka pemrograman aplikasi (API) untuk sistem backend **KLINIKU v1.0** berdasarkan Dokumen Perancangan Perangkat Lunak (DPPL) Kelompok 5 D3 Teknik Informatika SV UNS. Seluruh endpoint dirancang menggunakan arsitektur RESTful JSON dan ditujukan untuk integrasi dengan antarmuka pengguna frontend (Web Pasien, Antarmuka Admin Loket, Portal Dokter Poli, dan Display TV Ruang Tunggu).
 
-Sistem backend ini mengimplementasikan alur lengkap pendaftaran pasien baru, penerbitan Nomor Rekam Medis otomatis, login aman dengan proteksi **Google reCAPTCHA v2**, verifikasi dua langkah melalui **Email OTP 6-Digit (SMTP Gmail / Google Workspace)**, serta penerbitan token sesi berbasis **JSON Web Token (JWT)**.
+Sistem backend ini mengimplementasikan seluruh 9 User Story utama (US-01 s/d US-09), arsitektur keamanan tingkat tinggi (bcrypt, Google reCAPTCHA v2, SMTP Email OTP, enkripsi simetris **AES-256** untuk rekam medis sesuai UU PDP No. 27/2022, rate limiting, dan RBAC), serta penggantian seluruh saluran notifikasi WhatsApp menjadi **SMTP Email Resmi** (`smtp.gmail.com:587 TLS`).
 
 ---
 
@@ -11,23 +11,20 @@ Sistem backend ini mengimplementasikan alur lengkap pendaftaran pasien baru, pen
    - [Base URL & Alias](#base-url--alias)
    - [Header Standar Request](#header-standar-request)
    - [Standar HTTP Status Code](#standar-http-status-code)
-   - [Arsitektur Keamanan & Autentikasi](#arsitektur-keamanan--autentikasi)
-2. [Alur Registrasi Pasien (Patient Registration Flow)](#2-alur-registrasi-pasien-patient-registration-flow)
-3. [Alur Login & Verifikasi Email OTP (Two-Factor Authentication)](#3-alur-login--verifikasi-email-otp-two-factor-authentication)
-4. [Katalog Endpoint API](#4-katalog-endpoint-api)
-   - [4.1 Autentikasi & Akun](#41-autentikasi--akun)
-     - [`POST /api/v1/register` — Registrasi Pasien Baru](#411-registrasi-pasien-baru)
-     - [`POST /api/v1/check-nik` — Cek Validitas & Ketersediaan NIK](#412-cek-validitas--ketersediaan-nik)
-     - [`POST /api/v1/login` — Login Pasien & Kirim OTP ke Email](#413-login-pasien--kirim-otp-ke-email)
-     - [`POST /api/v1/verify-otp` — Verifikasi Kode OTP 6-Digit & Terbit JWT](#414-verifikasi-kode-otp-6-digit--terbit-jwt)
-     - [`POST /api/v1/resend-otp` — Kirim Ulang Kode OTP ke Email](#415-kirim-ulang-kode-otp-ke-email)
-     - [`GET /api/v1/me` — Profil Pengguna & Rekam Medis (Protected)](#416-profil-pengguna--rekam-medis-protected)
-     - [`POST /api/v1/logout` — Logout Pengguna (Protected)](#417-logout-pengguna-protected)
-   - [4.2 Data Master & Penunjang](#42-data-master--penunjang)
-     - [`GET /api/v1/polis` — Master Data Poliklinik](#421-master-data-poliklinik)
-5. [Struktur Basis Data & Model Entitas](#5-struktur-basis-data--model-entitas)
-6. [Panduan Pengujian via cURL (End-to-End Workflow)](#6-panduan-pengujian-via-curl-end-to-end-workflow)
-7. [Pengujian Otomatis (PHPUnit Test Suite)](#7-pengujian-otomatis-phpunit-test-suite)
+   - [Role-Based Access Control (RBAC)](#role-based-access-control-rbac)
+2. [Matriks Endpoint & Pemetaan User Story (DPPL)](#2-matriks-endpoint--pemetaan-user-story-dppl)
+3. [Katalog Endpoint Lengkap](#3-katalog-endpoint-lengkap)
+   - [3.1 Autentikasi & Akun (US-01)](#31-autentikasi--akun-us-01)
+   - [3.2 Pemesanan Antrean Online & Quota Engine (US-03)](#32-pemesanan-antrean-online--quota-engine-us-03)
+   - [3.3 Live Queue Tracker & Monitor TV Ruang Tunggu (US-02)](#33-live-queue-tracker--monitor-tv-ruang-tunggu-us-02)
+   - [3.4 Admin Loket: QR Check-in & Walk-in Registration (US-08)](#34-admin-loket-qr-check-in--walk-in-registration-us-08)
+   - [3.5 Admin Loket: Pemanggilan Antrean Multi-Channel & TTS (US-04)](#35-admin-loket-pemanggilan-antrean-multi-channel--tts-us-04)
+   - [3.6 Dokter Poli & Rekam Medis Terenkripsi AES-256 (US-05)](#36-dokter-poli--rekam-medis-terenkripsi-aes-256-us-05)
+   - [3.7 Pasien: Riwayat Rekam Medis Mandiri (US-07)](#37-pasien-riwayat-rekam-medis-mandiri-us-07)
+   - [3.8 Admin: Pengelolaan Jadwal Praktik & Kuota Dokter (US-06)](#38-admin-pengelolaan-jadwal-praktik--kuota-dokter-us-06)
+   - [3.9 Admin: Rekapitulasi Laporan Kunjungan & Export CSV (US-09)](#39-admin-rekapitulasi-laporan-kunjungan--export-csv-us-09)
+4. [Arsitektur Keamanan & Enkripsi Data](#4-arsitektur-keamanan--enkripsi-data)
+5. [Pengujian Otomatis (PHPUnit Test Suite)](#5-pengujian-otomatis-phpunit-test-suite)
 
 ---
 
@@ -46,7 +43,7 @@ Content-Type: application/json
 Accept: application/json
 ```
 
-Untuk endpoint terproteksi autentikasi (misal `/me` dan `/logout`):
+Untuk endpoint terproteksi autentikasi (Protected via JWT):
 ```http
 Authorization: Bearer <JWT_TOKEN>
 ```
@@ -54,457 +51,331 @@ Authorization: Bearer <JWT_TOKEN>
 ### Standar HTTP Status Code
 | Kode Status | Deskripsi | Skenario Penggunaan |
 | :--- | :--- | :--- |
-| `200 OK` | Berhasil | Request sukses (login start, profil query, verify OTP sukses). |
-| `201 Created` | Berhasil Dibuat | Akun pasien baru dan Nomor Rekam Medis (RM) berhasil diterbitkan. |
-| `401 Unauthorized` | Tidak Terotentikasi | NIK/Password salah atau token JWT tidak disertakan/tidak valid. |
-| `403 Forbidden` | Akses Ditolak | Akun berstatus non-aktif atau hak akses peran tidak mencukupi. |
-| `404 Not Found` | Tidak Ditemukan | Data pengguna atau sesi tidak ditemukan. |
-| `409 Conflict` | Konflik Data | NIK sudah terdaftar saat pemeriksaan live validation. |
-| `410 Gone` | Kedaluwarsa | Sesi verifikasi email OTP telah kedaluwarsa (TTL 5 menit habis). |
-| `422 Unprocessable Content` | Validasi Gagal | Format input tidak valid, reCAPTCHA bot token salah, atau kode OTP salah. |
-| `429 Too Many Requests` | Rate Limit Terlampaui | Terlalu banyak percobaan login/request dalam periode 1 menit (terproteksi Throttling). |
-| `500 Server Error` | Gangguan Server | Kegagalan socket/koneksi server SMTP mail. |
+| `200 OK` | Berhasil | Request sukses (baca data, update status, panggilan antrean). |
+| `201 Created` | Berhasil Dibuat | Entitas baru berhasil dibuat (registrasi, booking, rekam medis, jadwal). |
+| `400 Bad Request` | Permintaan Salah | Parameter request tidak lengkap atau tidak dapat diproses. |
+| `401 Unauthorized` | Belum Login / Token Invalid | Token JWT tidak disertakan, kedaluwarsa, atau tanda tangan tidak valid. |
+| `403 Forbidden` | Akses Ditolak (RBAC) | Pengguna tidak memiliki hak akses/peran yang sesuai untuk rute tersebut. |
+| `404 Not Found` | Tidak Ditemukan | ID antrean, dokter, jadwal, atau rekam medis tidak ditemukan. |
+| `410 Gone` | Sesi Kedaluwarsa | Sesi OTP email telah melewati batas waktu (5 menit). |
+| `422 Unprocessable Entity` | Validasi Gagal | Kuota penuh, format input salah, atau aturan bisnis terlanggar. |
+| `429 Too Many Requests` | Rate Limit Terlampaui | Melebihi batas request throttle per menit. |
+| `500 Server Error` | Kesalahan Internal Server | Terjadi pengecualian database atau kegagalan sistem internal. |
 
-### Arsitektur Keamanan & Proteksi Siber
-Sistem KLINIKU mengimplementasikan 5 pilar keamanan standar industri:
-
-1. **Password Security (Keamanan Kata Sandi)**:
-   - Seluruh kata sandi pengguna di-hash menggunakan algoritma **Bcrypt** (`PASSWORD_BCRYPT` dengan cost/rounds 12).
-   - Kata sandi **TIDAK PERNAH disimpan atau ditransmisikan dalam bentuk plaintext**.
-   - Model `User` menyembunyikan atribut `user_password` (`$hidden = ['user_password']`) sehingga tidak pernah bocor ke respons JSON atau serialisasi array.
-   - Pengecekan kata sandi pada saat login dilakukan menggunakan `Hash::check()` yang aman terhadap serangan *timing attack*.
-
-2. **Google reCAPTCHA v2 (Proteksi Bot & Brute Force)**:
-   - Diterapkan pada endpoint login (`/api/v1/login`) untuk mencegah serangan credential stuffing dan bot otomatis.
-   - Token verifikasi dikirimkan ke backend melalui field `recaptcha_token` dan divalidasi ke Google Siteverify API.
-   - Kredensial aktif:
-     - **Site Key**: `6LfEiisuAAAAAM1dgo05Kv4IqPwYUF5NTWbDUN9V`
-     - **Secret Key**: `6LfEiisuAAAAAEPuGqfaxFfGOtUGHNdZq0djWVkd`
-   - Token uji coba lingkungan lokal: `test-valid-token`. Input token yang salah/kedaluwarsa akan menghasilkan error `422 Unprocessable Content`.
-
-3. **One-Time Password (OTP) 2-Factor Authentication**:
-   - Kode OTP 6 digit acak aman (`random_int(100000, 999999)`) dikirimkan via SMTP Google Workspace (`smtp.gmail.com:587 TLS`).
-   - **Batas Waktu (Time-Bound)**: Sesi OTP disimpan pada cache dengan masa berlaku (TTL) **300 detik (5 menit)**. Melebihi waktu ini, sistem mengembalikan `410 Gone`.
-   - **Sekali Pakai (Single-Use Guarantee)**: Sesi OTP langsung dihapus dari cache (`Cache::forget`) segera setelah verifikasi pertama berhasil. Kode tidak dapat digunakan ulang (mencegah *replay attack*).
-   - **Brute-Force Lockout**: Jika kode salah dimasukkan sebanyak **5 kali**, sesi OTP langsung dimusnahkan (`status: 'locked'`) dan pengguna diwajibkan login ulang.
-
-4. **SQL Injection Prevention (Pencegahan SQLi)**:
-   - Seluruh operasi basis data menggunakan Laravel Eloquent ORM dan PDO Query Builder dengan **Prepared Statements / Parameterized Queries**.
-   - Input pengguna selalu diperlakukan sebagai nilai parameter harfiah (literal value binding), bukan bagian dari sintaks query SQL yang dapat dieksekusi.
-   - Telah diuji secara ketat terhadap payload SQL injection klasik dan modern (`' OR '1'='1`, `'; DROP TABLE user; --`, `' UNION SELECT ... --`) pada field `nik`, `password`, `check-nik`, dan data registrasi.
-
-5. **Rate Limiting (Throttling Permintaan)**:
-   - Pembatasan jumlah request diterapkan pada seluruh rute API untuk mencegah Denial of Service (DoS) dan serangan brute-force:
-     - **Login (`throttle:login`)**: Maksimum **5 percobaan per menit** per NIK + IP. Percobaan ke-6 mengembalikan status `HTTP 429 Too Many Requests`.
-     - **Verifikasi OTP (`throttle:otp`)**: Maksimum **5 percobaan per menit** per IP.
-     - **Kirim Ulang OTP (`throttle:otp_resend`)**: Maksimum **3 permintaan per menit** per IP.
-     - **Global API (`throttle:api`)**: Maksimum **60 request per menit** per IP/User.
-   - Header respons menyertakan `X-RateLimit-Limit`, `X-RateLimit-Remaining`, dan `Retry-After`.
-
-6. **JSON Web Token (JWT)**:
-   - Diterbitkan menggunakan algoritma `HS256` setelah verifikasi OTP email berhasil.
-   - Masa berlaku default: 24 jam (`JWT_TTL=86400`).
-   - Payload memuat: `user_id`, `nik`, `role` (`pasien`/`dokter`/`staf`), dan `nama`.
+### Role-Based Access Control (RBAC)
+Sistem menggunakan 3 aktor peran utama:
+1. `pasien`: Pasien terdaftar (`USR-PAS-XXXX`). Memiliki akses booking online, jadwal saya, e-tiket, live tracker, dan riwayat rekam medis pribadi.
+2. `dokter`: Dokter poliklinik (`USR-DOC-XXXX`). Memiliki akses daftar pasien hari ini, riwayat medis pasien, dan input rekam medis AES-256.
+3. `staf`: Petugas loket / administrasi (`USR-ADM-XXXX`). Memiliki akses scan QR check-in, pendaftaran walk-in, pemanggilan antrean, manajemen jadwal & kuota dokter, dan rekapitulasi laporan kunjungan.
 
 ---
 
-## 2. Alur Registrasi Pasien (Patient Registration Flow)
+## 2. Matriks Endpoint & Pemetaan User Story (DPPL)
 
-```
-[Mulai] Pasien membuka halaman Pendaftaran KLINIKU
-   │
-   ▼
-[Input Formulir] Pasien mengisi: NIK (16 digit), Nama, Email (wajib), No. WhatsApp, Password, Alamat
-   │
-   ▼
-[Kirim Data] POST /api/v1/register
-   │
-   ├──► [Validasi Gagal / NIK atau Email Duplikat?]
-   │        │
-   │        └──► HTTP 422: Tampilkan pesan error spesifik -> Pasien memperbaiki input
-   │
-   └──► [Validasi Berhasil]
-            │
-            ├──► Hash password dengan Bcrypt
-            ├──► Decode NIK: Otomatis mendeteksi Jenis Kelamin & Tanggal Lahir jika opsional
-            ├──► Generate ID Akun: USR-PAS-XXXX (Sequential, DB Row Lock)
-            ├──► Terbitkan Nomor Rekam Medis: RM-YYYY-XXXX (Sequential per tahun berjalan)
-            ├──► Simpan data ke tabel 'user' dan 'pasien' dalam DB Transaction
-            │
-            └──► HTTP 201 Created: Berikan notifikasi sukses & arahkan pasien ke halaman Login
-```
-
----
-
-## 3. Alur Login & Verifikasi Email OTP (Two-Factor Authentication)
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Pasien as Pasien (Frontend)
-    participant API as Backend KLINIKU
-    participant Recaptcha as Google reCAPTCHA
-    participant SMTP as Google SMTP (smtp.gmail.com)
-    participant Inbox as Kotak Masuk Email Pasien
-
-    Note over Pasien,API: Tahap 1: Submit Kredensial & reCAPTCHA
-    Pasien->>API: POST /api/v1/login (nik, password, recaptcha_token)
-    API->>Recaptcha: Verifikasi token reCAPTCHA
-    alt reCAPTCHA Tidak Valid
-        Recaptcha-->>API: Gagal
-        API-->>Pasien: HTTP 422 (reCAPTCHA token tidak valid)
-    else reCAPTCHA Valid
-        Recaptcha-->>API: Sukses
-        API->>API: Cocokkan NIK & Hash Password
-        alt Kredensial Salah
-            API-->>Pasien: HTTP 401 (NIK atau kata sandi tidak sesuai)
-        else Kredensial Benar
-            API->>API: Generate 6 Digit OTP & Simpan Sesi (TTL: 5 Menit)
-            API->>SMTP: Kirim Email Berisi Kode OTP (OtpMail template)
-            SMTP-->>Inbox: Email diterima pasien
-            API-->>Pasien: HTTP 200 (step="otp_verification", otp_session_id, masked_email)
-        end
-    end
-
-    Note over Pasien,API: Tahap 2: Input & Verifikasi Kode OTP
-    Pasien->>Inbox: Buka email & salin 6 digit kode OTP
-    Pasien->>API: POST /api/v1/verify-otp (otp_session_id, otp_code)
-    alt Kode OTP Salah
-        API-->>Pasien: HTTP 422 (Kode OTP salah)
-    else Sesi Kedaluwarsa
-        API-->>Pasien: HTTP 410 (Sesi kedaluwarsa, silakan login ulang)
-    else Kode OTP Benar
-        API->>API: Terbitkan JWT Bearer Token & Ambil Profil Pasien
-        API-->>Pasien: HTTP 200 OK (JWT Token, User & Dashboard Profile Data)
-    end
-
-    Note over Pasien,API: Tahap 3: Akses Dashboard Terproteksi
-    Pasien->>API: GET /api/v1/me (Header: Authorization: Bearer <token>)
-    API-->>Pasien: HTTP 200 OK (Data Rekam Medis & Profil Lengkap)
-```
+| User Story | Modul / Fitur | Method | Endpoint URL | Akses Peran |
+| :--- | :--- | :--- | :--- | :--- |
+| **US-01** | Registrasi Pasien Baru | `POST` | `/api/v1/register` | Publik |
+| **US-01** | Cek Duplikasi NIK | `POST` | `/api/v1/check-nik` | Publik |
+| **US-01** | Login Pasien & Kirim Email OTP | `POST` | `/api/v1/login` | Publik (Throttle) |
+| **US-01** | Verifikasi Email OTP 6-Digit | `POST` | `/api/v1/verify-otp` | Publik (Throttle) |
+| **US-01** | Kirim Ulang Email OTP | `POST` | `/api/v1/resend-otp` | Publik (Throttle) |
+| **US-01** | Profil Pengguna Login | `GET` | `/api/v1/me` | Authenticated |
+| **US-01** | Logout Pengguna | `POST` | `/api/v1/logout` | Authenticated |
+| **US-03** | Daftar Dokter & Jadwal Praktik | `GET` | `/api/v1/booking/dokter` | Publik / Pasien |
+| **US-03** | Cek Kuota Dokter H-7 s/d Hari H | `POST` | `/api/v1/booking/cek-kuota` | Publik / Pasien |
+| **US-03** | Buat Pemesanan Antrean Online | `POST` | `/api/v1/booking` | `pasien` |
+| **US-03** | Detail E-Tiket QR Code | `GET` | `/api/v1/booking/{id}/tiket` | Authenticated |
+| **US-03** | Batalkan Pemesanan Antrean | `POST` | `/api/v1/booking/{id}/batal` | `pasien` |
+| **US-02** | Jadwal Saya (Antrean Pasien) | `GET` | `/api/v1/antrean/saya` | `pasien` |
+| **US-02** | Live Tracking Real-Time Antrean | `GET` | `/api/v1/antrean/live/{id}` | Publik / Pasien |
+| **US-02** | Daftar Antrean Poli Hari Ini | `GET` | `/api/v1/antrean/poli/{poli_id}/hari-ini` | Publik |
+| **US-02** | Display Monitor TV & Audio TTS | `GET` | `/api/v1/display/tv` | Publik |
+| **US-08** | Verifikasi QR Check-in Loket | `POST` | `/api/v1/loket/checkin-qr` | `staf` |
+| **US-08** | Pendaftaran Pasien Walk-in | `POST` | `/api/v1/loket/pendaftaran-walkin` | `staf` |
+| **US-08** | Monitoring Antrean Loket Hari Ini | `GET` | `/api/v1/loket/antrean-hari-ini` | `staf` |
+| **US-04** | Panggil Antrean (TV TTS + Email) | `POST` | `/api/v1/loket/antrean/{id}/panggil` | `staf` |
+| **US-04** | Panggil Ulang Antrean (Recall) | `POST` | `/api/v1/loket/antrean/{id}/panggil-ulang` | `staf` |
+| **US-04** | Lewati Antrean (Skip) | `POST` | `/api/v1/loket/antrean/{id}/lewati` | `staf` |
+| **US-04** | Update Status Sedang Diperiksa | `POST` | `/api/v1/loket/antrean/{id}/layani` | `staf` |
+| **US-05** | Antrean Pasien Dokter Hari Ini | `GET` | `/api/v1/dokter/antrean-hari-ini` | `dokter` |
+| **US-05** | Riwayat Medis Pasien (Decrypted) | `GET` | `/api/v1/dokter/pasien/{id}/rekam-medis` | `dokter` |
+| **US-05** | Simpan Rekam Medis (AES-256) | `POST` | `/api/v1/dokter/rekam-medis` | `dokter` |
+| **US-07** | Riwayat Medis Mandiri Pasien | `GET` | `/api/v1/pasien/riwayat-medis` | `pasien` |
+| **US-07** | Detail Rekam Medis Pribadi | `GET` | `/api/v1/pasien/riwayat-medis/{id}` | `pasien` |
+| **US-06** | Lihat Jadwal & Kuota Dokter | `GET` | `/api/v1/admin/jadwal` | `staf` |
+| **US-06** | Tambah Jadwal Praktik Dokter | `POST` | `/api/v1/admin/jadwal` | `staf` |
+| **US-06** | Update Jadwal, Kuota & Cuti | `PUT` | `/api/v1/admin/jadwal/{id}` | `staf` |
+| **US-06** | Hapus Jadwal Praktik Dokter | `DELETE` | `/api/v1/admin/jadwal/{id}` | `staf` |
+| **US-09** | Rekapitulasi Laporan Kunjungan | `GET` | `/api/v1/admin/laporan-kunjungan` | `staf` |
+| **US-09** | Export Laporan Kunjungan (CSV) | `GET` | `/api/v1/admin/laporan-kunjungan/export` | `staf` |
 
 ---
 
-## 4. Katalog Endpoint API
+## 3. Katalog Endpoint Lengkap
 
-### 4.1 Autentikasi & Akun
+### 3.1 Autentikasi & Akun (US-01)
 
-#### 4.1.1 Registrasi Pasien Baru
-Mendaftarkan akun pasien baru, menerbitkan ID Pengguna (`user_id`), dan mencetak Nomor Rekam Medis (`pasien_norm`) secara otomatis.
-
-- **URL**: `/api/v1/register` *(Alias: `/api/v1/auth/register`, `/api/register`)*
-- **Method**: `POST`
-- **Autentikasi**: Tidak diperlukan (Publik)
-
-##### Parameter Request Body
-| Field | Tipe Data | Status | Aturan & Keterangan |
-| :--- | :--- | :--- | :--- |
-| `nik` | String | **Wajib** | 16 digit angka (`regex:/^[0-9]{16}$/`), unik dalam tabel `user`. |
-| `nama` | String | **Wajib** | Nama lengkap pasien (2 - 150 karakter). |
-| `email` | String | **Wajib** | Alamat email aktif untuk menerima kode OTP (format email valid, unik di `user_email`). |
-| `nowa` | String | **Wajib** | Nomor WhatsApp aktif (10 - 15 digit angka, awalan `08`, `62`, atau `+62`). |
-| `password` | String | **Wajib** | Kata sandi akun (minimal 6 karakter). |
-| `password_confirmation` | String | Opsional | Jika dikirim, nilainya harus sama dengan `password`. |
-| `alamat` | String | **Wajib** | Alamat domisili lengkap pasien (3 - 255 karakter). |
-| `jeniskelamin` | String | Opsional | Nilai: `Laki-laki` atau `Perempuan`. *Jika tidak diisi, otomatis dideteksi dari NIK.* |
-| `tgllahir` | String (Date) | Opsional | Format `YYYY-MM-DD`. *Jika tidak diisi, otomatis dideteksi dari NIK.* |
-| `nobpjs` | String | Opsional | Nomor kartu BPJS / KIS (13 digit angka, unik). |
-| `goldarah` | String | Opsional | Nilai: `A`, `B`, `AB`, atau `O`. |
-| `alergiobat` | String | Opsional | Riwayat alergi obat pasien (maksimal 255 karakter). |
-| `poli_id` | Integer | Opsional | ID Poliklinik tujuan utama (1-5). |
-
-##### Contoh Request
+#### 3.1.1 Registrasi Pasien Baru
+- **Endpoint**: `POST /api/v1/register`
+- **Akses**: Publik
+- **Payload Request**:
 ```json
 {
-  "nik": "3372010101950001",
-  "nama": "Budi Hartono",
-  "email": "budi.hartono@example.com",
+  "nik": "3372020912950001",
+  "nama": "Budi Santoso",
   "nowa": "081234567890",
+  "email": "budi.santoso@gmail.com",
   "password": "Password123!",
-  "alamat": "Jl. Melati No. 45, Jebres, Surakarta",
+  "password_confirmation": "Password123!",
+  "jeniskelamin": "Laki-laki",
+  "tgllahir": "1995-12-09",
+  "alamat": "Jl. Slamet Riyadi No. 45, Solo",
+  "nobpjs": "0001234567891",
   "goldarah": "O",
+  "alergiobat": "Tidak ada",
   "poli_id": 1
 }
 ```
-
-##### Contoh Response Sukses (`201 Created`)
+- **Response Berhasil (201 Created)**:
 ```json
 {
   "success": true,
-  "message": "Pendaftaran akun pasien berhasil! Nomor Rekam Medis (RM) telah dibuat. Silakan melanjutkan ke halaman login.",
+  "message": "Registrasi pasien berhasil. Silakan login untuk melakukan pemesanan antrean.",
   "data": {
-    "user_id": "USR-PAS-0101",
-    "user_role": "pasien",
-    "user_nama": "Budi Hartono",
-    "user_nik": "3372010101950001",
-    "user_email": "budi.hartono@example.com",
-    "user_nowa": "081234567890",
-    "pasien_norm": "RM-2026-0101",
-    "pasien_jeniskelamin": "Laki-laki",
-    "pasien_tgllahir": "1995-01-01",
-    "pasien_alamat": "Jl. Melati No. 45, Jebres, Surakarta",
-    "pasien_nobpjs": null,
-    "pasien_goldarah": "O",
-    "pasien_alergiobat": null,
-    "poli_nama": "Poli Umum",
-    "created_at": "2026-11-22T04:44:54.000000Z"
-  },
-  "next_step": {
-    "step": 4,
-    "action": "login",
-    "endpoint": "/api/v1/login"
+    "user_id": "USR-PAS-0002",
+    "norm": "RM-2026-0002",
+    "nama": "Budi Santoso",
+    "email": "budi.santoso@gmail.com"
   }
 }
 ```
 
----
-
-#### 4.1.2 Cek Validitas & Ketersediaan NIK
-Endpoint live-validation untuk form registrasi sebelum submit penuh. Mendeteksi validitas 16 digit, mengecek duplikasi di database, serta mengekstrak informasi bawaan NIK (jenis kelamin, tanggal lahir, dan usia).
-
-- **URL**: `/api/v1/check-nik` *(Alias: `/api/check-nik`)*
-- **Method**: `POST` atau `GET`
-- **Autentikasi**: Tidak diperlukan (Publik)
-
-##### Request Parameter
-- Jika via `POST` (Body JSON): `{"nik": "3372010101950001"}`
-- Jika via `GET` (Query URL): `/api/v1/check-nik?nik=3372010101950001`
-
-##### Response NIK Tersedia (`200 OK`)
+#### 3.1.2 Login Pasien (Google reCAPTCHA v2 & Kirim Email OTP)
+- **Endpoint**: `POST /api/v1/login`
+- **Akses**: Publik (Throttle: 5 perc/menit)
+- **Payload Request**:
+```json
+{
+  "nik": "3372020912950001",
+  "password": "Password123!",
+  "recaptcha_token": "TOKEN_RECAPTCHA_DARI_FRONTEND"
+}
+```
+- **Response Berhasil (200 OK)**:
 ```json
 {
   "success": true,
-  "available": true,
-  "message": "NIK valid dan belum terdaftar. Anda dapat melanjutkan pendaftaran.",
-  "nik_info": {
-    "valid": true,
-    "gender": "Laki-laki",
-    "birth_date": "1995-01-01",
-    "age": 31
-  }
-}
-```
-
-##### Response NIK Sudah Terdaftar (`409 Conflict`)
-```json
-{
-  "success": false,
-  "available": false,
-  "message": "NIK sudah terdaftar dalam sistem KLINIKU. Silakan langsung login dengan NIK Anda."
-}
-```
-
----
-
-#### 4.1.3 Login Pasien & Kirim OTP ke Email
-Memverifikasi NIK, kata sandi, dan token Google reCAPTCHA v2. Jika valid, sistem menghasilkan 6 digit kode OTP dan mengirimkannya ke email terdaftar pasien via SMTP Gmail.
-
-- **URL**: `/api/v1/login` *(Alias: `/api/v1/auth/login`, `/api/login`)*
-- **Method**: `POST`
-- **Autentikasi**: Tidak diperlukan (Publik)
-
-##### Parameter Request Body
-| Field | Tipe Data | Status | Keterangan |
-| :--- | :--- | :--- | :--- |
-| `nik` | String | **Wajib** | 16 digit NIK terdaftar. |
-| `password` | String | **Wajib** | Kata sandi akun pasien. |
-| `recaptcha_token` | String | **Wajib** | Token respon dari widget Google reCAPTCHA v2 ("Saya bukan robot"). |
-
-##### Contoh Request
-```json
-{
-  "nik": "3372020912254658",
-  "password": "Pasien123!",
-  "recaptcha_token": "test-valid-token"
-}
-```
-
-##### Contoh Response Sukses (`200 OK` — Menunggu Verifikasi OTP)
-```json
-{
-  "success": true,
-  "message": "Kredensial dan reCAPTCHA valid. Kode OTP 6 digit telah dikirimkan ke email l***i@student.uns.ac.id.",
-  "step": "otp_verification",
+  "message": "Kredensial valid. Kode OTP 6-digit telah dikirimkan ke email Anda (bu***@gmail.com).",
   "data": {
-    "otp_session_id": "a6b4c1d2-7e8f-49a0-bc12-34567890abcd",
-    "request_id": "a6b4c1d2-7e8f-49a0-bc12-34567890abcd",
-    "channel": "email",
-    "masked_email": "l***i@student.uns.ac.id",
-    "expires_in": 300,
-    "action_guide": "Buka kotak masuk atau folder spam email l***i@student.uns.ac.id, salin 6 digit kode OTP, lalu verifikasi pada endpoint /api/v1/verify-otp."
+    "otp_session_id": "otp_6f9a8b1c2d3e4f...",
+    "email_masked": "bu***@gmail.com",
+    "expires_in_seconds": 300
   }
 }
 ```
 
-##### Contoh Response Kredensial Salah (`401 Unauthorized`)
+#### 3.1.3 Verifikasi Email OTP & Penerbitan JWT
+- **Endpoint**: `POST /api/v1/verify-otp`
+- **Payload Request**:
 ```json
 {
-  "success": false,
-  "message": "Login gagal. NIK atau kata sandi yang Anda masukkan tidak sesuai."
+  "otp_session_id": "otp_6f9a8b1c2d3e4f...",
+  "otp_code": "824195"
 }
 ```
-
-##### Contoh Response reCAPTCHA Tidak Valid (`422 Unprocessable Content`)
-```json
-{
-  "success": false,
-  "message": "Verifikasi bot reCAPTCHA tidak valid atau telah kedaluwarsa.",
-  "errors": {
-    "recaptcha_token": [
-      "Verifikasi bot reCAPTCHA tidak valid atau telah kedaluwarsa."
-    ]
-  }
-}
-```
-
----
-
-#### 4.1.4 Verifikasi Kode OTP 6-Digit & Terbit JWT
-Memverifikasi 6 digit kode OTP yang diterima melalui email. Jika valid, sistem langsung menerbitkan JWT Bearer Token dan data profil lengkap pengguna.
-
-- **URL**: `/api/v1/verify-otp` *(Alias: `/api/v1/auth/verify-otp`, `/api/verify-otp`)*
-- **Method**: `POST`
-- **Autentikasi**: Tidak diperlukan (Publik — diverifikasi via `otp_session_id` dan `otp_code`)
-
-##### Parameter Request Body
-| Field | Tipe Data | Status | Keterangan |
-| :--- | :--- | :--- | :--- |
-| `otp_session_id` | String | **Wajib** | ID sesi OTP yang diperoleh dari respons endpoint login (alias: `request_id`). |
-| `otp_code` | String | **Wajib** | 6 digit kode OTP yang diterima dari email (alias: `code`). |
-
-##### Contoh Request
-```json
-{
-  "otp_session_id": "a6b4c1d2-7e8f-49a0-bc12-34567890abcd",
-  "otp_code": "847291"
-}
-```
-
-##### Contoh Response Berhasil Terverifikasi (`200 OK` — Terbit JWT)
+- **Response Berhasil (200 OK)**:
 ```json
 {
   "success": true,
-  "message": "Verifikasi OTP email berhasil! Selamat datang di Portal KLINIKU.",
+  "message": "Verifikasi OTP berhasil. Selamat datang di KLINIKU.",
   "data": {
-    "status": "verified",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token_type": "Bearer",
+    "expires_in": 86400,
     "user": {
-      "user_id": "USR-PAS-0001",
+      "user_id": "USR-PAS-0002",
       "user_role": "pasien",
-      "user_nama": "Yusuf Hidayat",
-      "user_nik": "3372020912254658",
-      "user_nowa": "081323756669",
-      "user_email": "lintarkertapati@student.uns.ac.id",
-      "user_status": "aktif",
-      "profile": {
-        "norm": "RM-2026-0001",
-        "jeniskelamin": "Laki-laki",
-        "tgllahir": "2025-12-09",
-        "alamat": "Jl. Ki Hajar Dewantara No. 23, Palur, Karanganyar",
-        "nobpjs": "0001136505587",
-        "goldarah": "O",
-        "alergiobat": null,
-        "poli": "Poli KIA / Anak"
+      "user_nama": "Budi Santoso",
+      "user_email": "budi.santoso@gmail.com",
+      "norm": "RM-2026-0002"
+    }
+  }
+}
+```
+
+---
+
+### 3.2 Pemesanan Antrean Online & Quota Engine (US-03)
+
+#### 3.2.1 Cek Kuota Dokter H-7 s/d Hari H
+- **Endpoint**: `POST /api/v1/booking/cek-kuota`
+- **Akses**: Publik / Pasien
+- **Payload Request**:
+```json
+{
+  "dokter_user_id": "USR-DOC-001",
+  "tanggal": "2026-11-26"
+}
+```
+- **Response Berhasil (200 OK)**:
+```json
+{
+  "status": "success",
+  "data": {
+    "tanggal": "2026-11-26",
+    "available": true,
+    "max_quota": 25,
+    "booked": 8,
+    "remaining": 17,
+    "message": "Kuota periksa tersedia (17 slot tersisa dari kuota 25).",
+    "dokter": {
+      "dokter_user_id": "USR-DOC-001",
+      "nama": "dr. Andi Pratama, Sp.PD",
+      "spesialisasi": "Penyakit Dalam",
+      "poli": "Poli Umum"
+    },
+    "jadwal": {
+      "jadwal_id": 4,
+      "jam_mulai": "08:00:00",
+      "jam_selesai": "12:00:00",
+      "status": "aktif"
+    }
+  }
+}
+```
+
+#### 3.2.2 Pemesanan Antrean Online Baru
+- **Endpoint**: `POST /api/v1/booking`
+- **Akses**: `Bearer Token` (`role:pasien`)
+- **Payload Request**:
+```json
+{
+  "dokter_user_id": "USR-DOC-001",
+  "tanggal": "2026-11-26",
+  "keluhan": "Batuk dan demam tinggi sejak 2 hari yang lalu"
+}
+```
+- **Response Berhasil (201 Created)**:
+```json
+{
+  "status": "success",
+  "message": "Pemesanan antrean berhasil! E-tiket telah dibuat dan dikirim ke email Anda.",
+  "data": {
+    "antrean_id": 42,
+    "antrean_nomor": "UM-009",
+    "antrean_angka": 9,
+    "antrean_tanggal": "2026-11-26",
+    "antrean_status": "menunggu_checkin",
+    "antrean_qr_code": "KLN-QR-A9F7B12C84E6D012",
+    "poli": {
+      "poli_id": 1,
+      "poli_nama": "Poli Umum"
+    },
+    "dokter": {
+      "dokter_user_id": "USR-DOC-001",
+      "nama": "dr. Andi Pratama, Sp.PD",
+      "spesialisasi": "Penyakit Dalam"
+    },
+    "jadwal": {
+      "jam_mulai": "08:00:00",
+      "jam_selesai": "12:00:00"
+    },
+    "catatan": "Batuk dan demam tinggi sejak 2 hari yang lalu"
+  }
+}
+```
+
+#### 3.2.3 Detail E-Tiket QR Code
+- **Endpoint**: `GET /api/v1/booking/{id}/tiket`
+- **Akses**: `Bearer Token`
+
+#### 3.2.4 Batalkan Pemesanan Antrean
+- **Endpoint**: `POST /api/v1/booking/{id}/batal`
+- **Akses**: `Bearer Token` (`role:pasien`)
+- **Catatan**: Hanya antrean dengan status `menunggu_checkin` yang dapat dibatalkan.
+
+---
+
+### 3.3 Live Queue Tracker & Monitor TV Ruang Tunggu (US-02)
+
+#### 3.3.1 Jadwal Saya (Antrean Pasien)
+- **Endpoint**: `GET /api/v1/antrean/saya?tipe=aktif`
+- **Akses**: `Bearer Token` (`role:pasien`)
+- **Query Params**: `tipe` (`aktif`, `riwayat`, `semua`)
+
+#### 3.3.2 Live Queue Tracker Real-Time
+- **Endpoint**: `GET /api/v1/antrean/live/{antrean_id}`
+- **Akses**: Publik / Pasien
+- **Response Berhasil (200 OK)**:
+```json
+{
+  "status": "success",
+  "data": {
+    "tiket": {
+      "antrean_id": 42,
+      "antrean_nomor": "UM-009",
+      "antrean_angka": 9,
+      "antrean_tanggal": "2026-11-26",
+      "antrean_status": "menunggu",
+      "antrean_jenis": "online",
+      "antrean_qr_code": "KLN-QR-A9F7B12C84E6D012",
+      "poli": {
+        "poli_id": 1,
+        "poli_nama": "Poli Umum"
+      },
+      "dokter": {
+        "dokter_user_id": "USR-DOC-001",
+        "nama": "dr. Andi Pratama, Sp.PD"
       }
     },
-    "authorization": {
-      "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJLTElOSUtVIiwic3ViIjoiVVNSLVBBUy0wMDAxIiwidXNlcl9pZCI6IlVTUi1QQVMtMDAwMSIsIm5payI6IjMzNzIwMjA5MTIyNTQ2NTgiLCJyb2xlIjoicGFzaWVuIiwibmFtYSI6Ill1c3VmIEhpZGF5YXQiLCJpYXQiOjE3OTUzMjcwMzksImV4cCI6MTc5NTQxMzQzOX0.LrQIE-4GdNyVLVLWJKw2YYOvI_RNqgxyFvzNJhy0bu0",
-      "type": "Bearer",
-      "expires_in": 86400
+    "live_status": {
+      "sedang_dilayani": {
+        "antrean_id": 38,
+        "antrean_nomor": "UM-005",
+        "antrean_angka": 5,
+        "antrean_status": "sedang_diperiksa",
+        "waktu_panggil": "09:15:30"
+      },
+      "sisa_antrean_di_depan": 3,
+      "total_menunggu_poli": 7,
+      "total_selesai_poli": 4,
+      "estimasi_waktu_tunggu_menit": 30,
+      "pesan": "Masih terdapat 3 pasien di depan Anda. Harap menunggu panggilan."
     }
   }
 }
 ```
 
-##### Contoh Response Kode OTP Salah (`422 Unprocessable Content`)
+#### 3.3.3 TV Display Monitor & Text-to-Speech (TTS) Ruang Tunggu
+- **Endpoint**: `GET /api/v1/display/tv`
+- **Akses**: Publik
+- **Response Berhasil (200 OK)**:
 ```json
 {
-  "success": false,
-  "status": "invalid_code",
-  "message": "Kode OTP yang Anda masukkan salah. Silakan periksa kembali email Anda."
-}
-```
-
-##### Contoh Response Sesi Kedaluwarsa (`410 Gone`)
-```json
-{
-  "success": false,
-  "status": "expired",
-  "message": "Sesi verifikasi OTP tidak ditemukan atau telah kedaluwarsa. Silakan lakukan login ulang."
-}
-```
-
----
-
-#### 4.1.5 Kirim Ulang Kode OTP ke Email
-Mengirimkan ulang kode OTP 6 digit baru ke alamat email pasien jika kode sebelumnya belum diterima atau masa berlakunya telah habis.
-
-- **URL**: `/api/v1/resend-otp` *(Alias: `/api/v1/auth/resend-otp`, `/api/resend-otp`)*
-- **Method**: `POST`
-- **Autentikasi**: Tidak diperlukan (Publik)
-
-##### Parameter Request Body
-| Field | Tipe Data | Status | Keterangan |
-| :--- | :--- | :--- | :--- |
-| `otp_session_id` | String | **Wajib** | `otp_session_id` (atau `request_id`) dari sesi sebelumnya. |
-
-##### Contoh Request
-```json
-{
-  "otp_session_id": "a6b4c1d2-7e8f-49a0-bc12-34567890abcd"
-}
-```
-
-##### Contoh Response Sukses (`200 OK`)
-```json
-{
-  "success": true,
-  "message": "Kode OTP baru berhasil dikirimkan ke email l***i@student.uns.ac.id.",
+  "status": "success",
   "data": {
-    "otp_session_id": "f8e7d6c5-4b3a-2109-8765-fedcba098765",
-    "request_id": "f8e7d6c5-4b3a-2109-8765-fedcba098765",
-    "channel": "email",
-    "masked_email": "l***i@student.uns.ac.id",
-    "expires_in": 300
-  }
-}
-```
-
----
-
-#### 4.1.6 Profil Pengguna & Rekam Medis (Protected)
-Mengambil informasi lengkap profil pengguna dan rekam medis pasien yang sedang login untuk ditampilkan pada Dashboard Pasien.
-
-- **URL**: `/api/v1/me` *(Alias: `/api/v1/auth/me`, `/api/me`)*
-- **Method**: `GET`
-- **Autentikasi**: **Wajib Bearer Token** (`Authorization: Bearer <TOKEN>`)
-
-##### Contoh Header
-```http
-Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...
-Accept: application/json
-```
-
-##### Contoh Response Sukses (`200 OK`)
-```json
-{
-  "success": true,
-  "data": {
-    "user_id": "USR-PAS-0001",
-    "user_role": "pasien",
-    "user_nama": "Yusuf Hidayat",
-    "user_nik": "3372020912254658",
-    "user_nowa": "081323756669",
-    "user_email": "lintarkertapati@student.uns.ac.id",
-    "user_status": "aktif",
-    "profile": {
-      "norm": "RM-2026-0001",
-      "jeniskelamin": "Laki-laki",
-      "tgllahir": "2025-12-09",
-      "alamat": "Jl. Ki Hajar Dewantara No. 23, Palur, Karanganyar",
-      "nobpjs": "0001136505587",
-      "goldarah": "O",
-      "alergiobat": null,
-      "poli": "Poli KIA / Anak"
+    "tanggal": "2026-11-24",
+    "timestamp": "2026-11-24T10:45:00+07:00",
+    "display_poli": [
+      {
+        "poli_id": 1,
+        "poli_nama": "Poli Umum",
+        "nomor_dipanggil": "UM-006",
+        "antrean_id": 39,
+        "status": "dipanggil",
+        "panggilan_ke": 1,
+        "waktu_panggil": "09:40:15",
+        "teks_tts": "Nomor antrean UM-006, silakan menuju ke Poli Umum.",
+        "sisa_antrean": 5,
+        "total_antrean": 12
+      }
+    ],
+    "panggilan_terbaru": {
+      "antrean_id": 39,
+      "antrean_nomor": "UM-006",
+      "poli_nama": "Poli Umum",
+      "teks_panggilan": "Nomor antrean UM-006, silakan menuju Poli Umum.",
+      "waktu_panggil": "2026-11-24 09:40:15"
     }
   }
 }
@@ -512,148 +383,262 @@ Accept: application/json
 
 ---
 
-#### 4.1.7 Logout Pengguna (Protected)
-Mengakhiri sesi pengguna yang sedang aktif di backend.
+### 3.4 Admin Loket: QR Check-in & Walk-in Registration (US-08)
 
-- **URL**: `/api/v1/logout` *(Alias: `/api/v1/auth/logout`, `/api/logout`)*
-- **Method**: `POST`
-- **Autentikasi**: **Wajib Bearer Token** (`Authorization: Bearer <TOKEN>`)
-
-##### Contoh Response Sukses (`200 OK`)
+#### 3.4.1 QR Check-in di Loket Fisik
+- **Endpoint**: `POST /api/v1/loket/checkin-qr`
+- **Akses**: `Bearer Token` (`role:staf`)
+- **Payload Request**:
 ```json
 {
-  "success": true,
-  "message": "Logout berhasil. Sesi Anda telah diakhiri."
+  "qr_code": "KLN-QR-A9F7B12C84E6D012"
+}
+```
+- **Response Berhasil (200 OK)**:
+```json
+{
+  "status": "success",
+  "message": "Check-in berhasil untuk antrean UM-009. Pasien telah masuk dalam daftar tunggu pemeriksaan.",
+  "data": {
+    "antrean_id": 42,
+    "antrean_nomor": "UM-009",
+    "antrean_status": "menunggu",
+    "waktu_checkin": "08:15:20",
+    "pasien": {
+      "nama": "Budi Santoso",
+      "norm": "RM-2026-0002",
+      "nik": "3372020912950001"
+    },
+    "poli": {
+      "poli_id": 1,
+      "poli_nama": "Poli Umum"
+    }
+  }
+}
+```
+
+#### 3.4.2 Pendaftaran Walk-in Pasien Langsung
+- **Endpoint**: `POST /api/v1/loket/pendaftaran-walkin`
+- **Akses**: `Bearer Token` (`role:staf`)
+- **Payload Request (Pasien Baru)**:
+```json
+{
+  "nik": "3372021504900003",
+  "nama": "Siti Rahmawati",
+  "nowa": "081299887755",
+  "email": "siti.rahma@gmail.com",
+  "jeniskelamin": "Perempuan",
+  "tgllahir": "1990-04-15",
+  "alamat": "Jl. Adi Sucipto No. 12, Solo",
+  "dokter_user_id": "USR-DOC-001",
+  "keluhan": "Sakit kepala berdenyut"
+}
+```
+- **Response Berhasil (201 Created)**:
+Mengembalikan detail tiket untuk langsung dicetak pada printer termal di loket fisik.
+
+---
+
+### 3.5 Admin Loket: Pemanggilan Antrean Multi-Channel & TTS (US-04)
+
+#### 3.5.1 Panggil Antrean Pasien
+- **Endpoint**: `POST /api/v1/loket/antrean/{id}/panggil`
+- **Akses**: `Bearer Token` (`role:staf`)
+- **Efek Samping**:
+  1. Status antrean berubah menjadi `dipanggil`.
+  2. Suara TTS diperbarui pada Monitor TV Ruang Tunggu.
+  3. Mengirimkan **SMTP Email Notifikasi** ke email pasien secara otomatis (menggantikan notifikasi WhatsApp).
+
+#### 3.5.2 Panggil Ulang (Recall)
+- **Endpoint**: `POST /api/v1/loket/antrean/{id}/panggil-ulang`
+- **Akses**: `Bearer Token` (`role:staf`)
+
+#### 3.5.3 Lewati Antrean (Skip)
+- **Endpoint**: `POST /api/v1/loket/antrean/{id}/lewati`
+- **Akses**: `Bearer Token` (`role:staf`)
+
+#### 3.5.4 Layani Antrean (Dokter Mulai Memeriksa)
+- **Endpoint**: `POST /api/v1/loket/antrean/{id}/layani`
+- **Akses**: `Bearer Token` (`role:staf`)
+
+---
+
+### 3.6 Dokter Poli & Rekam Medis Terenkripsi AES-256 (US-05)
+
+#### 3.6.1 Antrean Dokter Hari Ini
+- **Endpoint**: `GET /api/v1/dokter/antrean-hari-ini`
+- **Akses**: `Bearer Token` (`role:dokter`)
+
+#### 3.6.2 Riwayat Rekam Medis Pasien
+- **Endpoint**: `GET /api/v1/dokter/pasien/{pasien_user_id}/rekam-medis`
+- **Akses**: `Bearer Token` (`role:dokter`)
+
+#### 3.6.3 Simpan Pemeriksaan & Enkripsi Rekam Medis AES-256
+- **Endpoint**: `POST /api/v1/dokter/rekam-medis`
+- **Akses**: `Bearer Token` (`role:dokter`)
+- **Payload Request**:
+```json
+{
+  "antrean_id": 42,
+  "keluhan": "Demam tinggi 38.5 C disertai batuk berdahak kuning kehijauan",
+  "diagnosa": "J06.9 - Acute upper respiratory infection, unspecified",
+  "tanda_vital": "TD: 120/80 mmHg, Nadi: 84 bpm, Suhu: 38.5 C, RR: 20 x/m",
+  "tindakan": "Pemeriksaan fisis toraks, pemberian kompres hangat",
+  "resep_obat": "Amoxicillin 500mg 3x1 (5 hari), Paracetamol 500mg 3x1 (prn demam)"
+}
+```
+- **Response Berhasil (201 Created)**:
+```json
+{
+  "status": "success",
+  "message": "Pemeriksaan pasien Budi Santoso selesai. Rekam medis berhasil dienkripsi dan disimpan.",
+  "data": {
+    "rekam_medis_id": 15,
+    "antrean_nomor": "UM-009",
+    "antrean_status": "selesai",
+    "tanggal": "2026-11-26",
+    "diagnosa": "J06.9 - Acute upper respiratory infection, unspecified",
+    "waktu_selesai": "09:35:40"
+  }
 }
 ```
 
 ---
 
-### 4.2 Data Master & Penunjang
+### 3.7 Pasien: Riwayat Rekam Medis Mandiri (US-07)
 
-#### 4.2.1 Master Data Poliklinik
-Mengambil daftar poliklinik aktif untuk opsi pilihan poli rujukan/tujuan pada dropdown form registrasi.
+#### 3.7.1 Riwayat Medis Pribadi
+- **Endpoint**: `GET /api/v1/pasien/riwayat-medis`
+- **Akses**: `Bearer Token` (`role:pasien`)
 
-- **URL**: `/api/v1/polis` *(Alias: `/api/polis`)*
-- **Method**: `GET`
-- **Autentikasi**: Tidak diperlukan (Publik)
-
----
-
-## 5. Struktur Basis Data & Model Entitas
-
-Data autentikasi dan rekam medis dikelola dengan integritas referensial ketat pada MySQL 8.4:
-
-### 1. Tabel `user` (Tabel Master Akun)
-| Kolom | Tipe Data | Constraint | Keterangan |
-| :--- | :--- | :--- | :--- |
-| `user_id` | `VARCHAR(30)` | **PRIMARY KEY** | ID unik terstruktur (`USR-PAS-XXXX`, `USR-DOK-XXXX`, `USR-STF-XXXX`). |
-| `user_role` | `ENUM('dokter','staf','pasien')` | NOT NULL | Peran pengguna dalam ekosistem klinik. |
-| `user_nama` | `VARCHAR(150)` | NOT NULL | Nama lengkap pengguna. |
-| `user_nik` | `CHAR(16)` | **UNIQUE**, NOT NULL | 16 digit NIK KTP. |
-| `user_nowa` | `VARCHAR(20)` | NOT NULL | Nomor WhatsApp aktif. |
-| `user_email` | `VARCHAR(100)` | NOT NULL, **UNIQUE** | Alamat email aktif untuk menerima OTP. |
-| `user_password` | `VARCHAR(255)` | NOT NULL | Hash kata sandi terenkripsi Bcrypt. |
-| `user_status` | `ENUM('aktif','nonaktif')` | DEFAULT `'aktif'` | Status keaktifan akun. |
-| `user_createdat` | `DATETIME` | NOT NULL | Waktu pembuatan akun. |
-| `user_updatedat` | `DATETIME` | NULL | Waktu pembaruan akun. |
-
-### 2. Tabel `pasien` (Tabel Profil Pasien & Rekam Medis)
-| Kolom | Tipe Data | Constraint | Keterangan |
-| :--- | :--- | :--- | :--- |
-| `pasien_user_id` | `VARCHAR(30)` | **PRIMARY KEY**, FK | Merujuk ke `user.user_id` (`ON DELETE CASCADE`). |
-| `pasien_role` | `ENUM('pasien')` | CHECK | Wajib bernilai `'pasien'`. |
-| `pasien_norm` | `VARCHAR(30)` | **UNIQUE**, NOT NULL | Nomor Rekam Medis terstruktur (`RM-YYYY-XXXX`). |
-| `pasien_jeniskelamin` | `ENUM('Laki-laki','Perempuan')` | NOT NULL | Jenis kelamin pasien. |
-| `pasien_tgllahir` | `DATE` | NOT NULL | Tanggal lahir pasien. |
-| `pasien_alamat` | `TEXT` | NOT NULL | Alamat domisili lengkap. |
-| `pasien_nobpjs` | `VARCHAR(30)` | **UNIQUE**, NULL | Nomor kartu BPJS / KIS (13 digit). |
-| `pasien_goldarah` | `ENUM('A','B','AB','O')` | NULL | Golongan darah. |
-| `pasien_alergiobat` | `TEXT` | NULL | Riwayat alergi obat. |
-| `pasien_poli_id` | `INT` | FK, NULL | Merujuk ke `poli.poli_id`. |
+#### 3.7.2 Detail Berkas Rekam Medis Pribadi
+- **Endpoint**: `GET /api/v1/pasien/riwayat-medis/{id}`
+- **Akses**: `Bearer Token` (`role:pasien`)
 
 ---
 
-## 6. Panduan Pengujian via cURL (End-to-End Workflow)
+### 3.8 Admin: Pengelolaan Jadwal Praktik & Kuota Dokter (US-06)
 
-Berikut adalah urutan perintah cURL lengkap untuk menguji keseluruhan alur mulai dari pengecekan NIK hingga logout:
+#### 3.8.1 Lihat Jadwal & Kuota Praktik
+- **Endpoint**: `GET /api/v1/admin/jadwal`
+- **Akses**: `Bearer Token` (`role:staf`)
+- **Filter**: `?poli_id=1&hari=1&status=aktif`
 
-### 1. Cek Ketersediaan NIK
-```bash
-curl -s -X POST http://localhost:8080/api/v1/check-nik \
-  -H "Content-Type: application/json" \
-  -d '{"nik": "3372010101950001"}'
+#### 3.8.2 Tambah Jadwal Praktik Dokter
+- **Endpoint**: `POST /api/v1/admin/jadwal`
+- **Akses**: `Bearer Token` (`role:staf`)
+- **Payload Request**:
+```json
+{
+  "dokter_user_id": "USR-DOC-001",
+  "hari": 6,
+  "jam_mulai": "08:00",
+  "jam_selesai": "12:00",
+  "kuota": 25,
+  "status": "aktif"
+}
 ```
 
-### 2. Pendaftaran Pasien Baru
-```bash
-curl -s -X POST http://localhost:8080/api/v1/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nik": "3372010101950001",
-    "nama": "Budi Hartono",
-    "email": "budi.hartono@example.com",
-    "nowa": "081234567890",
-    "password": "Password123!",
-    "alamat": "Jl. Melati No. 45, Jebres, Surakarta",
-    "goldarah": "O",
-    "poli_id": 1
-  }'
+#### 3.8.3 Perbarui Jadwal / Cuti Dokter
+- **Endpoint**: `PUT /api/v1/admin/jadwal/{id}`
+- **Akses**: `Bearer Token` (`role:staf`)
+- **Payload Request**:
+```json
+{
+  "kuota": 30,
+  "status": "cuti"
+}
 ```
 
-### 3. Login Pasien (Kirim OTP ke Email)
-```bash
-curl -s -X POST http://localhost:8080/api/v1/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nik": "3372020912254658",
-    "password": "Pasien123!",
-    "recaptcha_token": "test-valid-token"
-  }'
-```
-*Salin nilai `data.otp_session_id` dari respon di atas.*
-
-### 4. Verifikasi Kode OTP Email (Mendapatkan JWT Bearer Token)
-```bash
-curl -s -X POST http://localhost:8080/api/v1/verify-otp \
-  -H "Content-Type: application/json" \
-  -d '{
-    "otp_session_id": "<MASUKKAN_OTP_SESSION_ID_DARI_STEP_3>",
-    "otp_code": "847291"
-  }'
-```
-*Salin nilai `data.authorization.token` dari respon di atas.*
-
-### 5. Akses Profil Pasien (Dashboard /me)
-```bash
-curl -s -X GET http://localhost:8080/api/v1/me \
-  -H "Authorization: Bearer <MASUKKAN_JWT_TOKEN>"
-```
-
-### 6. Logout Pengguna
-```bash
-curl -s -X POST http://localhost:8080/api/v1/logout \
-  -H "Authorization: Bearer <MASUKKAN_JWT_TOKEN>"
-```
+#### 3.8.4 Hapus Jadwal Praktik
+- **Endpoint**: `DELETE /api/v1/admin/jadwal/{id}`
+- **Akses**: `Bearer Token` (`role:staf`)
 
 ---
 
-## 7. Pengujian Otomatis (PHPUnit Test Suite)
+### 3.9 Admin: Rekapitulasi Laporan Kunjungan & Export CSV (US-09)
 
-Untuk menjalankan seluruh test suite otomatis:
-
-```bash
-docker compose exec app php artisan test
+#### 3.9.1 Rekapitulasi Laporan Kunjungan
+- **Endpoint**: `GET /api/v1/admin/laporan-kunjungan?tanggal_mulai=2026-11-01&tanggal_selesai=2026-11-24`
+- **Akses**: `Bearer Token` (`role:staf`)
+- **Response Berhasil (200 OK)**:
+```json
+{
+  "status": "success",
+  "data": {
+    "periode": {
+      "tanggal_mulai": "2026-11-01",
+      "tanggal_selesai": "2026-11-24"
+    },
+    "ringkasan": {
+      "total_kunjungan": 142,
+      "kunjungan_selesai": 128,
+      "kunjungan_dilewati": 8,
+      "kunjungan_batal": 6,
+      "rata_rata_per_hari": 17.8
+    },
+    "statistik": {
+      "per_status": { "selesai": 128, "dilewati": 8, "batal": 6 },
+      "per_jenis": { "online": 95, "walkin": 47 },
+      "per_poli": { "Poli Umum": 78, "Poli Gigi & Mulut": 34, "Poli KIA": 30 }
+    },
+    "daftar_kunjungan": [...]
+  }
+}
 ```
 
-Untuk menjalankan kelompok test secara terpisah:
+#### 3.9.2 Export Rekapitulasi Format CSV
+- **Endpoint**: `GET /api/v1/admin/laporan-kunjungan/export?tanggal_mulai=2026-11-01&tanggal_selesai=2026-11-24`
+- **Akses**: `Bearer Token` (`role:staf`)
+- **Format Download**: File CSV kompatibel Microsoft Excel dengan UTF-8 BOM encoding.
+
+---
+
+## 4. Arsitektur Keamanan & Enkripsi Data
+
+1. **Password Hashing (bcrypt)**:
+   - Password pengguna di-hash menggunakan algoritma **bcrypt** dengan work factor standar industri (12 rounds).
+   - Atribut `user_password` dilindungi atribut `$hidden` pada model Eloquent sehingga tidak pernah bocor dalam serialisasi JSON.
+
+2. **Google reCAPTCHA v2**:
+   - Mencegah serangan *credential stuffing* dan *bot abuse* pada rute login.
+
+3. **Email OTP 6-Digit (Two-Factor Authentication)**:
+   - Kode OTP bersifat *single-use* (hanya bisa dipakai satu kali).
+   - Masa berlaku 5 menit dengan *sliding expiration*.
+   - Proteksi *brute-force*: maksimal 5 kali percobaan salah, setelah itu sesi dikunci permanen.
+   - Pengiriman menggunakan protokol **SMTP Gmail TLS** (`smtp.gmail.com:587`).
+
+4. **Enkripsi Simetris AES-256 (Mandat UU PDP No. 27/2022)**:
+   - Rekam medis pasien (`keluhan`, `diagnosa`, `tanda_vital`, `tindakan`, `resep_obat`) disimpan dalam bentuk ciphertext di database menggunakan cipher **AES-256-CBC**.
+   - Dekripsi hanya dilakukan secara transparan pada layer model Eloquent saat diakses oleh pengguna yang berhak.
+
+5. **SQL Injection Prevention**:
+   - Seluruh query menggunakan parameterized prepared statements via PDO / Laravel Eloquent ORM.
+
+6. **Rate Limiting (Throttle Middleware)**:
+   - `/api/v1/login`: 5 request / menit.
+   - `/api/v1/verify-otp`: 10 request / menit.
+   - `/api/v1/resend-otp`: 3 request / menit.
+   - Endpoint umum: 60 request / menit.
+
+---
+
+## 5. Pengujian Otomatis (PHPUnit Test Suite)
+
+Seluruh endpoint dan aturan bisnis telah diuji secara menyeluruh menggunakan automated feature tests dengan status **100% PASS**:
+- `Tests\Feature\AuthLoginTest` (13 tests)
+- `Tests\Feature\BookingTest` (5 tests)
+- `Tests\Feature\LoketTest` (5 tests)
+- `Tests\Feature\DokterPoliAndRekamMedisTest` (2 tests)
+- `Tests\Feature\AdminJadwalAndLaporanTest` (4 tests)
+- `Tests\Feature\QueueTrackerTest` (4 tests)
+- `Tests\Feature\PatientRegistrationTest` (6 tests)
+- `Tests\Feature\SecurityFeaturesTest` (13 tests)
+- `Tests\Unit\ExampleTest` & `Tests\Feature\ExampleTest` (2 tests)
+
+**Total Test Suite Result**:
 ```bash
-# Pengujian autentikasi, login, Email OTP SMTP, & JWT
-docker compose exec app php artisan test --filter AuthLoginTest
-
-# Pengujian pendaftaran pasien, auto-decode NIK, validasi email & nomor RM
-docker compose exec app php artisan test --filter PatientRegistrationTest
-
-# Pengujian 5 Pilar Keamanan (Bcrypt, reCAPTCHA, Single-Use OTP, SQLi, Rate Limiting)
-docker compose exec app php artisan test --filter SecurityFeaturesTest
+Tests:    54 passed (543 assertions)
+Duration: ~7 seconds
 ```
