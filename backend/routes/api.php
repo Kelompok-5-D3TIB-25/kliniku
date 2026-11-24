@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\Api\BookingController;
+use App\Http\Controllers\Api\DokterPoliController;
 use App\Http\Controllers\Api\LoginController;
 use App\Http\Controllers\Api\LoketController;
+use App\Http\Controllers\Api\PatientMedicalRecordController;
 use App\Http\Controllers\Api\QueueTrackerController;
 use App\Http\Controllers\Api\RegisterController;
 use Illuminate\Support\Facades\Route;
@@ -61,6 +63,15 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('/booking', [BookingController::class, 'store']);
             Route::post('/booking/{id}/batal', [BookingController::class, 'cancel']);
             Route::get('/antrean/saya', [QueueTrackerController::class, 'antreanSaya']);
+            Route::get('/pasien/riwayat-medis', [PatientMedicalRecordController::class, 'riwayatMedis']);
+            Route::get('/pasien/riwayat-medis/{id}', [PatientMedicalRecordController::class, 'detailMedis']);
+        });
+
+        // Doctor Poli operations (US-05)
+        Route::middleware('role:dokter')->group(function () {
+            Route::get('/dokter/antrean-hari-ini', [DokterPoliController::class, 'antreanHariIni']);
+            Route::get('/dokter/pasien/{pasien_user_id}/rekam-medis', [DokterPoliController::class, 'riwayatPasien']);
+            Route::post('/dokter/rekam-medis', [DokterPoliController::class, 'simpanPemeriksaan']);
         });
 
         // Admin Loket / Staf operations (US-04 & US-08)
@@ -117,6 +128,14 @@ Route::middleware('throttle:api')->group(function () {
             Route::post('/booking', [BookingController::class, 'store']);
             Route::post('/booking/{id}/batal', [BookingController::class, 'cancel']);
             Route::get('/antrean/saya', [QueueTrackerController::class, 'antreanSaya']);
+            Route::get('/pasien/riwayat-medis', [PatientMedicalRecordController::class, 'riwayatMedis']);
+            Route::get('/pasien/riwayat-medis/{id}', [PatientMedicalRecordController::class, 'detailMedis']);
+        });
+
+        Route::middleware('role:dokter')->group(function () {
+            Route::get('/dokter/antrean-hari-ini', [DokterPoliController::class, 'antreanHariIni']);
+            Route::get('/dokter/pasien/{pasien_user_id}/rekam-medis', [DokterPoliController::class, 'riwayatPasien']);
+            Route::post('/dokter/rekam-medis', [DokterPoliController::class, 'simpanPemeriksaan']);
         });
 
         Route::middleware('role:staf')->group(function () {
